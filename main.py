@@ -27,7 +27,7 @@ cidx2key = {  # todo could probably change this to an array
 # no notes => 300,000 - 450,000 ish value for a note
 PIXEL_THRESHOLD = 500_000
 
-STRUMS_PER_SECOND = 10
+STRUMS_PER_SECOND = 6
 STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
 
 boundbox_coords = [(596, 912), (1334, 996)]
@@ -57,6 +57,8 @@ hsv_uppers = np.uint8([
 hsv_setter_idx = 0
 
 last_strum = time.perf_counter_ns()
+
+strum_counter = 0
 
 
 def sbb_mouse_callback(event, x, y, flags, param):
@@ -148,37 +150,41 @@ def divide_boundbox(mss_base):
 
 
 def get_notes(fret_box):
-    global last_strum
     fret_box_hsv = cv2.cvtColor(fret_box, cv2.COLOR_BGR2HSV)
     full_mask = np.zeros(fret_box.shape[:2])
     notes = []
-    for idx, (lower, upper) in enumerate(zip(hsv_lowers, hsv_uppers)):
+    for idx, (lower, upper) in enumerate(zip(hsv_lowers[:4], hsv_uppers[:4])): # fixme - excluding orange
         # mask to index color
         mask = cv2.inRange(fret_box_hsv, lower, upper)
         full_mask += mask
         pixel_sum = mask.sum()
         # print("sum", idx, ':', pixel_sum)
-        current_ns = time.perf_counter_ns()
-        if current_ns - last_strum > STRUM_DELAY_NS and pixel_sum > PIXEL_THRESHOLD:
+        if pixel_sum > PIXEL_THRESHOLD:
             # TODO - finaggle with the delay stuff
             #  also, every time a note is hit, orange sparks are let off, which triggers the orange note to play.
             #  need to maybe make special case for orange, or tighten threshold
             #  or make a better way of strumming notes that isn't just if the segmented pixels have a greater sum than some threshold - try to get position info?
             notes.append(idx)
-            last_strum = current_ns
+
     return notes, full_mask
 
 
 def strum(note_list):
-    for note in note_list:
-        # print(cidx2key[note])
-        pressKey(cidx2key[note])
-    if len(note_list) > 0:
-        # print("strum")
-        press(STRUM_KEY)
-    for note in note_list:
-        # pass
-        releaseKey(cidx2key[note])
+    global last_strum
+    global strum_counter
+    current_ns = time.perf_counter_ns()
+    if current_ns - last_strum > STRUM_DELAY_NS:
+        for note in note_list:
+            # print(cidx2key[note])
+            pressKey(cidx2key[note])
+        if len(note_list) > 0:
+            press(STRUM_KEY)
+            print("strum", strum_counter)
+            strum_counter += 1
+        for note in note_list:
+            # pass
+            releaseKey(cidx2key[note])
+        last_strum = current_ns
 
 
 def loop_boundbox_feed(mss_base):
@@ -196,7 +202,6 @@ def loop_boundbox_feed(mss_base):
 
 
 def main():
-    print(cv2.version)
     with mss() as sct:
         # set_boundbox(sct)
         # save_bounded_img(sct)
@@ -204,10 +209,6 @@ def main():
         loop_boundbox_feed(sct)
 
     return
-
-# for i in range(5):
-#     time.sleep(1)
-#     press('UP')
 
 
 if __name__ == "__main__":
