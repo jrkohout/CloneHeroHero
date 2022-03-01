@@ -5,9 +5,33 @@ import time
 import cv2
 from mss import mss
 from PIL import Image
+from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
 
-boundbox_coords = list()
-boundbox = None  # TODO - create default boundbox so that we can skip corner selection at the beginning
+
+MONITOR = 1  # 1 should be main monitor
+
+PREVIEW_SCALE_FACTOR = 2
+TARGET_FPS = 240
+
+MS_DELAY = 1000 // TARGET_FPS
+
+STRUM_KEY = 'DOWN'
+cidx2key = {  # todo could probably change this to an array
+    0: 'g',  # green
+    1: 'f',  # red
+    2: 'd',  # yellow
+    3: 's',  # blue
+    4: 'a'   # orange
+}
+
+# no notes => 300,000 - 450,000 ish value for a note
+PIXEL_THRESHOLD = 500_000
+
+STRUMS_PER_SECOND = 10
+STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
+
+boundbox_coords = [(596, 912), (1334, 996)]
+boundbox = {'left': 596, 'top': 912, 'width': 738, 'height': 84}
 
 callback_img = None
 
@@ -30,12 +54,9 @@ hsv_uppers = np.uint8([
     [110, 255, 255],
     [20, 255, 255]
 ])
-# 1 - hsv_red
-# 2 - hsv_yellow
-# 3 - hsv_blue
-# 4 - hsv_orange
 hsv_setter_idx = 0
 
+last_strum = time.perf_counter_ns()
 
 
 def sbb_mouse_callback(event, x, y, flags, param):
@@ -43,17 +64,20 @@ def sbb_mouse_callback(event, x, y, flags, param):
     # EVENT_LBUTTONDOWN - left mouse press
     # EVENT_LBUTTONUP - left mouse release
     if event == cv2.EVENT_LBUTTONUP:
-        print("x: {}, y: {}".format(x, y))
-        boundbox_coords.append((x, y))
+        print("x: {}, y: {}".format(x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
+        boundbox_coords.append((x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
 
 
 def set_boundbox(mss_base):
     print("Available Monitors:")
     for mon in mss_base.monitors:
         print(mon)
-    mon = mss_base.monitors[1]  # 1 should be main monitor
-    screenshot = mss_base.grab(mon)
-    cv2.imshow("screenshot", np.array(screenshot))
+    mon = mss_base.monitors[MONITOR]
+    screenshot = np.array(mss_base.grab(mon))
+    small_width = screenshot.shape[1] // PREVIEW_SCALE_FACTOR
+    small_height = screenshot.shape[0] // PREVIEW_SCALE_FACTOR
+    small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
+    cv2.imshow("screenshot", small_screenshot)
     cv2.setMouseCallback("screenshot", sbb_mouse_callback)
     while cv2.waitKey() != ord('q'):
         pass  # TODO - maybe limit to only be able to click twice somehow
@@ -65,6 +89,7 @@ def set_boundbox(mss_base):
         'width': bb_width,
         'height': bb_height
     }
+    print("Set boundbox to:", boundbox)
 
 
 def set_offsets():
@@ -122,14 +147,67 @@ def divide_boundbox(mss_base):
         _ = cv2.waitKey()
 
 
+def get_notes(fret_box):
+    global last_strum
+    fret_box_hsv = cv2.cvtColor(fret_box, cv2.COLOR_BGR2HSV)
+    full_mask = np.zeros(fret_box.shape[:2])
+    notes = []
+    for idx, (lower, upper) in enumerate(zip(hsv_lowers, hsv_uppers)):
+        # mask to index color
+        mask = cv2.inRange(fret_box_hsv, lower, upper)
+        full_mask += mask
+        pixel_sum = mask.sum()
+        # print("sum", idx, ':', pixel_sum)
+        current_ns = time.perf_counter_ns()
+        if current_ns - last_strum > STRUM_DELAY_NS and pixel_sum > PIXEL_THRESHOLD:
+            # TODO - finaggle with the delay stuff
+            #  also, every time a note is hit, orange sparks are let off, which triggers the orange note to play.
+            #  need to maybe make special case for orange, or tighten threshold
+            #  or make a better way of strumming notes that isn't just if the segmented pixels have a greater sum than some threshold - try to get position info?
+            notes.append(idx)
+            last_strum = current_ns
+    return notes, full_mask
+
+
+def strum(note_list):
+    for note in note_list:
+        # print(cidx2key[note])
+        pressKey(cidx2key[note])
+    if len(note_list) > 0:
+        # print("strum")
+        press(STRUM_KEY)
+    for note in note_list:
+        # pass
+        releaseKey(cidx2key[note])
+
+
+def loop_boundbox_feed(mss_base):
+    while True:
+        screenshot = np.array(mss_base.grab(boundbox))
+        notes, full_mask = get_notes(screenshot)
+        strum(notes)
+        cv2.imshow("mask", full_mask)
+        cv2.imshow("screenshot", screenshot)
+
+        if cv2.waitKey(MS_DELAY) == ord('q'):
+            print("quit.")
+            cv2.destroyAllWindows()
+            break
+
+
 def main():
     print(cv2.version)
     with mss() as sct:
         # set_boundbox(sct)
         # save_bounded_img(sct)
-        divide_boundbox(sct)
+        # divide_boundbox(sct)
+        loop_boundbox_feed(sct)
 
     return
+
+# for i in range(5):
+#     time.sleep(1)
+#     press('UP')
 
 
 if __name__ == "__main__":
