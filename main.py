@@ -7,7 +7,7 @@ from mss import mss
 from PIL import Image
 
 boundbox_coords = list()
-boundbox = None
+boundbox = None  # TODO - create default boundbox so that we can skip corner selection at the beginning
 
 callback_img = None
 
@@ -15,6 +15,28 @@ bb_left_offset = None
 bb_top_offset = None
 bb_height = None
 bb_width = None
+
+hsv_lowers = np.uint8([
+    [55, 100, 100],   # green
+    [0, 100, 100],    # red
+    [25, 100, 100],   # yellow
+    [100, 100, 100],  # blue
+    [10, 100, 100]    # orange
+])
+hsv_uppers = np.uint8([
+    [65, 255, 255],
+    [5, 255, 255],
+    [35, 255, 255],
+    [110, 255, 255],
+    [20, 255, 255]
+])
+# 1 - hsv_red
+# 2 - hsv_yellow
+# 3 - hsv_blue
+# 4 - hsv_orange
+hsv_setter_idx = 0
+
+
 
 def sbb_mouse_callback(event, x, y, flags, param):
     # EVENT_LBUTTONDBLCLK - left double click
@@ -67,9 +89,22 @@ def save_bounded_img(mss_base):
 
 
 def color_mouse_callback(event, x, y, flags, param):
+    global hsv_lowers
+    global hsv_uppers
+    global hsv_setter_idx
     if event == cv2.EVENT_LBUTTONUP:
         print("x: {}, y: {}".format(x, y))
-        print("BGR:", callback_img[y, x, :])
+        # bgr - [0-255, 0-255, 0-255]
+        # hsv - [0-179, 0-255, 0-255]
+        bgr = callback_img[y, x, :]
+        hsv = cv2.cvtColor(callback_img[y, x, :].reshape((1, 1, 3)), cv2.COLOR_BGR2HSV)
+        print("BGR:", bgr)
+        print("HSV:", hsv)
+        if hsv_setter_idx < 5:
+            hsv_lowers[hsv_setter_idx] = np.uint8([max(hsv[0, 0, 0] - 5, 0), 100, 100])  # TODO - adjust blue maybe
+            hsv_uppers[hsv_setter_idx] = np.uint8([min(hsv[0, 0, 0] + 5, 179), 255, 255])
+            print("set color ranges for", hsv_setter_idx)
+            hsv_setter_idx += 1
 
 
 def divide_boundbox(mss_base):
@@ -78,20 +113,13 @@ def divide_boundbox(mss_base):
     cv2.imshow("screenshot", callback_img)
     cv2.setMouseCallback("screenshot", color_mouse_callback)
 
-    _ = cv2.waitKey()
     hsv_img = cv2.cvtColor(callback_img, cv2.COLOR_BGR2HSV)
-
-    bgr_red = np.uint8([[[0, 0, 154]]])
-    hsv_red = cv2.cvtColor(bgr_red, cv2.COLOR_BGR2HSV)  # TODO - left off here
-    lower = hsv_red - np.array([[[10, 0, 0]]])
-    upper = hsv_red + np.array([[[10, 0, 0]]])
-
-    mask = cv2.inRange(hsv_img, lower, upper)
-    cv2.imshow("screenshot", mask)
     _ = cv2.waitKey()
 
-
-
+    for i in range(5):
+        mask = cv2.inRange(hsv_img, hsv_lowers[i], hsv_uppers[i])  # red mask
+        cv2.imshow("screenshot", mask)
+        _ = cv2.waitKey()
 
 
 def main():
