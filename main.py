@@ -8,6 +8,9 @@ from PIL import Image
 from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
 
 
+# FIXME - for the defaults, it would be best to save them to a file, and allow program to either load the defaults
+#  from the file and start running, or do the setup phase first (saving to file)
+
 MONITOR = 1  # 1 should be main monitor
 
 PREVIEW_SCALE_FACTOR = 2
@@ -30,8 +33,10 @@ PIXEL_THRESHOLD = 500_000
 STRUMS_PER_SECOND = 6
 STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
 
-boundbox_coords = [(596, 912), (1334, 996)]
-boundbox = {'left': 596, 'top': 912, 'width': 738, 'height': 84}
+AREA_THRESH = 100
+
+boundbox_coords = [(534, 490), (1388, 1076)]  # default fixme
+boundbox = {'left': 534, 'top': 490, 'width': 854, 'height': 586}  # default
 
 callback_img = None
 
@@ -40,14 +45,14 @@ bb_top_offset = None
 bb_height = None
 bb_width = None
 
-hsv_lowers = np.uint8([
+hsv_lowers = np.uint8([  # default
     [55, 100, 100],   # green
     [0, 100, 100],    # red
     [25, 100, 100],   # yellow
     [100, 100, 100],  # blue
     [10, 100, 100]    # orange
 ])
-hsv_uppers = np.uint8([
+hsv_uppers = np.uint8([  # default
     [65, 255, 255],
     [5, 255, 255],
     [35, 255, 255],
@@ -59,6 +64,20 @@ hsv_setter_idx = 0
 last_strum = time.perf_counter_ns()
 
 strum_counter = 0
+
+perspective_corners = [[559, 2], [293, 2], [3, 580], [848, 577]] # fixme
+warp_width = 600
+warp_height = 800
+scene_points = np.float32([  # default
+    [559, 2],
+    [293, 2],
+    [3, 580],
+    [848, 577],
+])
+target_points = np.float32([[warp_width-1, 0], [0, 0], [0, warp_height-1], [warp_width-1, warp_height-1]])
+M = None
+
+old_fret_board = None
 
 
 def sbb_mouse_callback(event, x, y, flags, param):
@@ -134,9 +153,35 @@ def color_mouse_callback(event, x, y, flags, param):
             hsv_setter_idx += 1
 
 
+# MAKE SURE TO CLICK CORNERS IN MATHEMATICAL FASHION - QI, QII, QIII, QIV in that order (tr, tl, br, bl)
+def perspective_mouse_callback(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONUP:
+        perspective_corners.append((x, y))
+
+
+def init_perspective_box():
+    global scene_points
+    global M
+    scene_points = np.float32(perspective_corners)
+    M = cv2.getPerspectiveTransform(scene_points, target_points)
+
+
 def divide_boundbox(mss_base):
     global callback_img
-    callback_img = cv2.imread("screenshots/boundbox_example.png")
+    # set perspective corners
+    callback_img = cv2.imread("boundbox.png") # fixme - make sure this is saved in first steps
+    cv2.imshow("screenshot", callback_img)
+    cv2.setMouseCallback("screenshot", perspective_mouse_callback)
+    _ = cv2.waitKey()
+    init_perspective_box()
+
+    # display perspective warp
+    warped = cv2.warpPerspective(callback_img, M, dsize=(warp_width, warp_height))
+    cv2.imshow("screenshot", warped)
+    _ = cv2.waitKey()
+
+    # set colors
+    callback_img = cv2.imread("screenshots/boundbox_example.png") # fixme - somehow get screenshot of actual fretboard
     cv2.imshow("screenshot", callback_img)
     cv2.setMouseCallback("screenshot", color_mouse_callback)
 
@@ -149,31 +194,27 @@ def divide_boundbox(mss_base):
         _ = cv2.waitKey()
 
 
-def get_notes(fret_box):
-    fret_box_hsv = cv2.cvtColor(fret_box, cv2.COLOR_BGR2HSV)
-    full_mask = np.zeros(fret_box.shape[:2])
-    notes = []
-    for idx, (lower, upper) in enumerate(zip(hsv_lowers[:4], hsv_uppers[:4])): # fixme - excluding orange
-        # mask to index color
-        mask = cv2.inRange(fret_box_hsv, lower, upper)
-        full_mask += mask
-        pixel_sum = mask.sum()
-        # print("sum", idx, ':', pixel_sum)
-        if pixel_sum > PIXEL_THRESHOLD:
-            # TODO - finaggle with the delay stuff
-            #  also, every time a note is hit, orange sparks are let off, which triggers the orange note to play.
-            #  need to maybe make special case for orange, or tighten threshold
-            #  or make a better way of strumming notes that isn't just if the segmented pixels have a greater sum than some threshold - try to get position info?
-            notes.append(idx)
-
-    return notes, full_mask
+# def get_notes(fret_box):
+#     fret_box_hsv = cv2.cvtColor(fret_box, cv2.COLOR_BGR2HSV)
+#     full_mask = np.zeros(fret_box.shape[:2])
+#     notes = []
+#     for idx, (lower, upper) in enumerate(zip(hsv_lowers[:4], hsv_uppers[:4])): # fixme - excluding orange
+#         # mask to index color
+#         mask = cv2.inRange(fret_box_hsv, lower, upper)
+#         full_mask += mask
+#         pixel_sum = mask.sum()
+#         # print("sum", idx, ':', pixel_sum)
+#         if pixel_sum > PIXEL_THRESHOLD:
+#             notes.append(idx)
+#
+#     return notes, full_mask
 
 
 def strum(note_list):
     global last_strum
     global strum_counter
     current_ns = time.perf_counter_ns()
-    if current_ns - last_strum > STRUM_DELAY_NS:
+    if current_ns - last_strum > STRUM_DELAY_NS and False:
         for note in note_list:
             # print(cidx2key[note])
             pressKey(cidx2key[note])
@@ -187,13 +228,55 @@ def strum(note_list):
         last_strum = current_ns
 
 
+# divide board into 5 columns (green, red, yellow, blue, orange)
+def track_columns(old_frame, frame):
+    # FIXME - FOR SPEED - change this to only mask the new frame each iteration rather than both old and new frames.
+    #  Could reduce the masking needed by half. Need to figure out how to store the old masks
+
+    col_width = frame.shape[1] / 5  # keep as float
+
+    # todo convert to for loop, passing each column into a method
+    col0 = frame[:, int(0*col_width):int(1*col_width), :]
+    col1 = frame[:, int(1*col_width):int(2*col_width), :]
+    col2 = frame[:, int(2*col_width):int(3*col_width), :]
+    col3 = frame[:, int(3*col_width):int(4*col_width), :]
+    col4 = frame[:, int(4*col_width):int(5*col_width), :]
+
+    mask0 = cv2.inRange(frame[:, int(0*col_width):int(1*col_width), :], hsv_lowers[0], hsv_uppers[0])
+    old_mask0 = cv2.inRange(old_frame[:, int(0*col_width):int(1*col_width), :], hsv_lowers[0], hsv_uppers[0])
+
+    frame_delta = cv2.subtract(mask0, old_mask0)
+    # todo possibly dilate here
+    #  another option may be to use absdiff and dilate a bunch to get huge notes
+
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(frame_delta)
+
+    fd_copy = frame_delta.copy()
+
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:
+            cv2.circle(fd_copy, (int(centroids[i][0]), int(centroids[i][1])), 40, [125, 125, 125], thickness=5)
+
+    cv2.imshow("test", fd_copy)
+    _ = cv2.waitKey(1)
+
+
 def loop_boundbox_feed(mss_base):
+    global old_fret_board
+    screenshot = np.array(mss_base.grab(boundbox))
+    warped = cv2.warpPerspective(screenshot, M, (warp_width, warp_height))
+    old_fret_board = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)  # convert to hsv
     while True:
         screenshot = np.array(mss_base.grab(boundbox))
-        notes, full_mask = get_notes(screenshot)
-        strum(notes)
-        cv2.imshow("mask", full_mask)
-        cv2.imshow("screenshot", screenshot)
+        warped = cv2.warpPerspective(screenshot, M, (warp_width, warp_height))
+        fret_board = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)
+
+        track_columns(old_fret_board, fret_board)
+
+        old_fret_board = fret_board
+        # strum(notes)
+        # cv2.imshow("mask", full_mask)
+        cv2.imshow("screenshot", fret_board)
 
         if cv2.waitKey(MS_DELAY) == ord('q'):
             print("quit.")
@@ -205,7 +288,10 @@ def main():
     with mss() as sct:
         # set_boundbox(sct)
         # save_bounded_img(sct)
+
         # divide_boundbox(sct)
+
+        init_perspective_box()
         loop_boundbox_feed(sct)
 
     return
