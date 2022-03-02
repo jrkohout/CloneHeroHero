@@ -4,8 +4,8 @@ import numpy as np
 import time
 import cv2
 from mss import mss
-from PIL import Image
 from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
+from screencap import ScreenCapture
 
 
 # FIXME - for the defaults, it would be best to save them to a file, and allow program to either load the defaults
@@ -27,57 +27,14 @@ cidx2key = {  # todo could probably change this to an array
     4: 'a'   # orange
 }
 
-# no notes => 300,000 - 450,000 ish value for a note
-PIXEL_THRESHOLD = 500_000
-
 STRUMS_PER_SECOND = 6
 STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
 
 AREA_THRESH = 100
 
-boundbox_coords = [(534, 490), (1388, 1076)]  # default fixme
-boundbox = {'left': 534, 'top': 490, 'width': 854, 'height': 586}  # default
-
 callback_img = None
 
-bb_left_offset = None
-bb_top_offset = None
-bb_height = None
-bb_width = None
-
-hsv_lowers = np.uint8([  # default
-    [55, 100, 100],   # green
-    [0, 100, 100],    # red
-    [25, 100, 100],   # yellow
-    [100, 100, 100],  # blue
-    [10, 100, 100]    # orange
-])
-hsv_uppers = np.uint8([  # default
-    [65, 255, 255],
-    [5, 255, 255],
-    [35, 255, 255],
-    [110, 255, 255],
-    [20, 255, 255]
-])
-hsv_setter_idx = 0
-
-last_strum = time.perf_counter_ns()
-
-strum_counter = 0
-
-perspective_corners = [[559, 2], [293, 2], [3, 580], [848, 577]] # fixme
-warp_width = 600
-warp_height = 800
-scene_points = np.float32([  # default
-    [559, 2],
-    [293, 2],
-    [3, 580],
-    [848, 577],
-])
-target_points = np.float32([[warp_width-1, 0], [0, 0], [0, warp_height-1], [warp_width-1, warp_height-1]])
-M = None
-
-old_fret_board = None
+boundbox_coords = [(534, 490), (1388, 1076)]  # default fixme
 
 
 def sbb_mouse_callback(event, x, y, flags, param):
@@ -87,6 +44,16 @@ def sbb_mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONUP:
         print("x: {}, y: {}".format(x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
         boundbox_coords.append((x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
+
+
+
+bb_left_offset = None
+bb_top_offset = None
+bb_height = None
+bb_width = None
+
+boundbox = {'left': 534, 'top': 490, 'width': 854, 'height': 586}  # default
+
 
 
 def set_boundbox(mss_base):
@@ -134,6 +101,23 @@ def save_bounded_img(mss_base):
     cv2.imwrite("boundbox.png", np.array(screenshot))
 
 
+hsv_lowers = np.uint8([  # default
+    [55, 100, 100],   # green
+    [0, 100, 100],    # red
+    [25, 100, 100],   # yellow
+    [100, 100, 100],  # blue
+    [10, 100, 100]    # orange
+])
+hsv_uppers = np.uint8([  # default
+    [65, 255, 255],
+    [5, 255, 255],
+    [35, 255, 255],
+    [110, 255, 255],
+    [20, 255, 255]
+])
+hsv_setter_idx = 0
+
+
 def color_mouse_callback(event, x, y, flags, param):
     global hsv_lowers
     global hsv_uppers
@@ -153,16 +137,32 @@ def color_mouse_callback(event, x, y, flags, param):
             hsv_setter_idx += 1
 
 
+perspective_corners = [[559, 2], [293, 2], [3, 580], [848, 577]] # fixme
+
+
 # MAKE SURE TO CLICK CORNERS IN MATHEMATICAL FASHION - QI, QII, QIII, QIV in that order (tr, tl, br, bl)
 def perspective_mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONUP:
         perspective_corners.append((x, y))
 
 
+scene_points = np.float32([  # default
+    [559, 2],
+    [293, 2],
+    [3, 580],
+    [848, 577],
+])
+M = None
+
+warp_width = 600
+warp_height = 800
+
+
 def init_perspective_box():
     global scene_points
     global M
     scene_points = np.float32(perspective_corners)
+    target_points = np.float32([[warp_width - 1, 0], [0, 0], [0, warp_height - 1], [warp_width - 1, warp_height - 1]])
     M = cv2.getPerspectiveTransform(scene_points, target_points)
 
 
@@ -194,27 +194,13 @@ def divide_boundbox(mss_base):
         _ = cv2.waitKey()
 
 
-# def get_notes(fret_box):
-#     fret_box_hsv = cv2.cvtColor(fret_box, cv2.COLOR_BGR2HSV)
-#     full_mask = np.zeros(fret_box.shape[:2])
-#     notes = []
-#     for idx, (lower, upper) in enumerate(zip(hsv_lowers[:4], hsv_uppers[:4])): # fixme - excluding orange
-#         # mask to index color
-#         mask = cv2.inRange(fret_box_hsv, lower, upper)
-#         full_mask += mask
-#         pixel_sum = mask.sum()
-#         # print("sum", idx, ':', pixel_sum)
-#         if pixel_sum > PIXEL_THRESHOLD:
-#             notes.append(idx)
-#
-#     return notes, full_mask
+strum_counter = 0
 
 
 def strum(note_list):
     global last_strum
     global strum_counter
-    current_ns = time.perf_counter_ns()
-    if current_ns - last_strum > STRUM_DELAY_NS and False:
+    if False: # fixme
         for note in note_list:
             # print(cidx2key[note])
             pressKey(cidx2key[note])
@@ -228,14 +214,18 @@ def strum(note_list):
         last_strum = current_ns
 
 
+old_bottom_y = 0
+
+
 # divide board into 5 columns (green, red, yellow, blue, orange)
 def track_columns(old_frame, frame):
+    global old_bottom_y
     # FIXME - FOR SPEED - change this to only mask the new frame each iteration rather than both old and new frames.
     #  Could reduce the masking needed by half. Need to figure out how to store the old masks
 
     col_width = frame.shape[1] / 5  # keep as float
 
-    # todo convert to for loop, passing each column into a method
+    # todo convert to for loop, passing each column into a method (or try to vectorize)
     col0 = frame[:, int(0*col_width):int(1*col_width), :]
     col1 = frame[:, int(1*col_width):int(2*col_width), :]
     col2 = frame[:, int(2*col_width):int(3*col_width), :]
@@ -245,20 +235,29 @@ def track_columns(old_frame, frame):
     mask0 = cv2.inRange(frame[:, int(0*col_width):int(1*col_width), :], hsv_lowers[0], hsv_uppers[0])
     old_mask0 = cv2.inRange(old_frame[:, int(0*col_width):int(1*col_width), :], hsv_lowers[0], hsv_uppers[0])
 
-    frame_delta = cv2.subtract(mask0, old_mask0)
-    # todo possibly dilate here
-    #  another option may be to use absdiff and dilate a bunch to get huge notes
+    # todo possibly erode and dilate here
 
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(frame_delta)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask0)
 
-    fd_copy = frame_delta.copy()
-
+    mask0_copy = mask0.copy()
+    new_bottom_y = 0
     for i in range(1, num_labels):
         if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:
-            cv2.circle(fd_copy, (int(centroids[i][0]), int(centroids[i][1])), 40, [125, 125, 125], thickness=5)
+            # centroid: [x, y]
+            if centroids[i][1] > new_bottom_y:
+                new_bottom_y = centroids[i][1]
+            cv2.circle(mask0_copy, (int(centroids[i][0]), int(centroids[i][1])), 35, [125, 125, 125], thickness=7)
 
-    cv2.imshow("test", fd_copy)
+    if old_bottom_y > new_bottom_y:
+        # note has crossed section, emit signal
+        print("Note has crossed", old_bottom_y) # todo emit signal
+
+    old_bottom_y = new_bottom_y
+    cv2.imshow("test", mask0_copy)
     _ = cv2.waitKey(1)
+
+
+old_fret_board = None
 
 
 def loop_boundbox_feed(mss_base):
@@ -286,13 +285,15 @@ def loop_boundbox_feed(mss_base):
 
 def main():
     with mss() as sct:
-        # set_boundbox(sct)
-        # save_bounded_img(sct)
+        sc = ScreenCapture(sct)
+    #init_properties()
+    # set_boundbox(sct)
+    # save_bounded_img(sct)
 
-        # divide_boundbox(sct)
+    # divide_boundbox(sct)
 
-        init_perspective_box()
-        loop_boundbox_feed(sct)
+    # init_perspective_box()
+    # loop_boundbox_feed(sct)
 
     return
 
