@@ -91,3 +91,8 @@ class ColorCapture:
             cv2.imshow("mask_preview", mask)
             _ = cv2.waitKey()
         cv2.destroyWindow("mask_preview")
+
+    def mask(self, img, color_idx):
+        img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)  # convert to hsv
+        # todo possibly erode and dilate here
+        return cv2.inRange(img_hsv, self._hsv_lowers[color_idx], self._hsv_uppers[color_idx])

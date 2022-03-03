@@ -29,7 +29,8 @@ class ScreenFeed:
         for mon in self._mss.monitors:
             print(mon)
         print()
-        response = ""
+        response = ""  # TODO - move interactive elements outside class, pass in as init params
+        # TODO - also set window titles to the instructions printed in console
         while response.lower() not in ('y', 'n'):
             response = input("Use screen capture properties from file? (y/n) ")
         if response.lower() == 'y':
@@ -151,3 +152,8 @@ class ScreenFeed:
             cv2.imshow("screenshot", screenshot)
             cv2.imshow("warped", warped)
         cv2.destroyAllWindows()
+
+    def next_frame(self):
+        bb_screenshot = np.array(self._mss.grab(self._boundbox))
+        warped = cv2.warpPerspective(bb_screenshot, self._M, dsize=(int(self._warp_width), int(self._warp_height)))
+        return warped
