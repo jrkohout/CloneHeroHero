@@ -15,7 +15,7 @@ from screenfeed import ScreenFeed
 
 MONITOR = 1  # 1 should be main monitor
 
-TARGET_FPS = 240
+TARGET_FPS = 240  # FIXME - adjust fps
 MS_DELAY = 1000 // TARGET_FPS
 
 STRUM_KEY = 'DOWN'
@@ -56,21 +56,21 @@ def _get_bottom_y(mask):
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
 
     mask_copy = mask.copy()
-    new_bottom_y = 0
+    bottom_y = 0
     for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:
+        if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:  # FIXME adjust area threshold
             # centroid: [x, y]
-            if centroids[i][1] > new_bottom_y:
-                new_bottom_y = centroids[i][1]
+            if centroids[i][1] > bottom_y:
+                bottom_y = centroids[i][1]
             cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 35, [180, 180, 180], thickness=7) # (int(centroids[i][0]), int(centroids[i][1]))
-    return new_bottom_y, mask_copy
+    return bottom_y, mask_copy
 
 
 class Hero:
-    def __init__(self):
+    def __init__(self, do_previews, load_sf_properties, load_cc_properties):
         with mss() as sct:
-            self._s_feed = ScreenFeed(sct, MONITOR)
-        self._c_cap = ColorCapture()
+            self._s_feed = ScreenFeed(sct, MONITOR, do_previews, load_sf_properties)
+        self._c_cap = ColorCapture(do_previews, load_cc_properties)
         self._old_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange
 
     # col0 = frame[:, int(0 * col_width):int(1 * col_width), :]
@@ -82,7 +82,7 @@ class Hero:
     def play_loop(self):
         new_bottom_y = np.zeros(5)
         while True:
-            frame = self._s_feed.next_frame()
+            frame = self._s_feed.next_frame() # FIXME - need to cut off image before the fret either here or in screencap
             col_width = frame.shape[1] / 5  # keep as float
 
             # divide board into 5 columns (green, red, yellow, blue, orange)
@@ -101,7 +101,11 @@ class Hero:
             if np.any(notes):
                 print("Some note has crossed (", notes, ")")  # todo emit signal
 
-            self._old_bottom_y = new_bottom_y
+            # print("old -", self._old_bottom_y)
+            # print("new -", new_bottom_y)
+            # print()
+
+            self._old_bottom_y = new_bottom_y.copy()
 
             # strum(notes) todo
 
@@ -118,8 +122,20 @@ class Hero:
                 break
 
 
+# returns true if yes, false if no
+def prompt_yn(prompt):
+    response = ""
+    while response.lower() not in ('y', 'n'):
+        response = input(prompt)
+    return response.lower() == 'y'
+
+
 def main():
-    hero = Hero()
+    do_previews = not prompt_yn("Skip previews of screen feed and color capture? (y/n) ")
+    load_sfp = prompt_yn("Load screen feed properties from file? (y/n) ")
+    load_ccp = prompt_yn("Load color capture properties from file? (y/n) ")
+
+    hero = Hero(do_previews, load_sfp, load_ccp)
     hero.play_loop()
 
 

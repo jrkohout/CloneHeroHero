@@ -22,22 +22,20 @@ def sbb_mouse_callback(event, x, y, flags, param):
 
 
 class ScreenFeed:
-    def __init__(self, mss: MSSBase, mon_num):
+    def __init__(self, mss: MSSBase, mon_num, show_preview, load_properties):
         self._mss = mss
         self._mon_num = mon_num
         print("Available Monitors:")
         for mon in self._mss.monitors:
             print(mon)
         print()
-        response = ""  # TODO - move interactive elements outside class, pass in as init params
         # TODO - also set window titles to the instructions printed in console
-        while response.lower() not in ('y', 'n'):
-            response = input("Use screen capture properties from file? (y/n) ")
-        if response.lower() == 'y':
+        if load_properties:
             self._load_properties()
         else:
             self._set_properties()
-        self._show_preview()
+        if show_preview:
+            self._show_preview()
 
 
     def _load_properties(self):

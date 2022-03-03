@@ -31,15 +31,13 @@ def color_mouse_callback(event, x, y, flags, param):
 
 
 class ColorCapture:
-    def __init__(self):
-        response = ""
-        while response.lower() not in ('y', 'n'):
-            response = input("Use color ranges from file? (y/n) ")
-        if response.lower() == 'y':
+    def __init__(self, show_preview, load_properties):
+        if load_properties:
             self._load_colors()
         else:
             self._set_colors()
-        self._show_color_preview()
+        if show_preview:
+            self._show_color_preview()
 
     def _load_colors(self):
         with open(COLORS_PATH, 'rb') as file:
