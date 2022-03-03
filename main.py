@@ -13,9 +13,7 @@ from screencap import ScreenCapture
 
 MONITOR = 1  # 1 should be main monitor
 
-PREVIEW_SCALE_FACTOR = 2
 TARGET_FPS = 240
-
 MS_DELAY = 1000 // TARGET_FPS
 
 STRUM_KEY = 'DOWN'
@@ -33,72 +31,6 @@ STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
 AREA_THRESH = 100
 
 callback_img = None
-
-boundbox_coords = [(534, 490), (1388, 1076)]  # default fixme
-
-
-def sbb_mouse_callback(event, x, y, flags, param):
-    # EVENT_LBUTTONDBLCLK - left double click
-    # EVENT_LBUTTONDOWN - left mouse press
-    # EVENT_LBUTTONUP - left mouse release
-    if event == cv2.EVENT_LBUTTONUP:
-        print("x: {}, y: {}".format(x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
-        boundbox_coords.append((x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
-
-
-
-bb_left_offset = None
-bb_top_offset = None
-bb_height = None
-bb_width = None
-
-boundbox = {'left': 534, 'top': 490, 'width': 854, 'height': 586}  # default
-
-
-
-def set_boundbox(mss_base):
-    print("Available Monitors:")
-    for mon in mss_base.monitors:
-        print(mon)
-    mon = mss_base.monitors[MONITOR]
-    screenshot = np.array(mss_base.grab(mon))
-    small_width = screenshot.shape[1] // PREVIEW_SCALE_FACTOR
-    small_height = screenshot.shape[0] // PREVIEW_SCALE_FACTOR
-    small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
-    cv2.imshow("screenshot", small_screenshot)
-    cv2.setMouseCallback("screenshot", sbb_mouse_callback)
-    while cv2.waitKey() != ord('q'):
-        pass  # TODO - maybe limit to only be able to click twice somehow
-    set_offsets()
-    global boundbox
-    boundbox = {
-        'left': bb_left_offset,
-        'top': bb_top_offset,
-        'width': bb_width,
-        'height': bb_height
-    }
-    print("Set boundbox to:", boundbox)
-
-
-def set_offsets():
-    global bb_left_offset
-    global bb_top_offset
-    global bb_width
-    global bb_height
-    bb_coords = np.array(boundbox_coords, dtype=np.int32)
-    bb_left_offset = int(np.min(bb_coords[:, 0]))
-    bb_top_offset = int(np.min(bb_coords[:, 1]))
-    bb_width = int(np.max(bb_coords[:, 0])) - bb_left_offset
-    bb_height = int(np.max(bb_coords[:, 1])) - bb_top_offset
-
-
-def save_bounded_img(mss_base):
-    print("bounding box:", boundbox)
-    # print("dtype", mon["left"].dtype)
-    screenshot = mss_base.grab(boundbox)
-    cv2.imshow("screenshot", np.array(screenshot))
-    _ = cv2.waitKey()
-    cv2.imwrite("boundbox.png", np.array(screenshot))
 
 
 hsv_lowers = np.uint8([  # default
@@ -137,49 +69,9 @@ def color_mouse_callback(event, x, y, flags, param):
             hsv_setter_idx += 1
 
 
-# perspective corners with respect to the 0, 0 of the bounding box
-perspective_corners = [[559, 2], [293, 2], [3, 580], [848, 577]] # fixme
-
-
-# MAKE SURE TO CLICK CORNERS IN MATHEMATICAL FASHION - QI, QII, QIII, QIV in that order (tr, tl, br, bl)
-def perspective_mouse_callback(event, x, y, flags, param):
-    if event == cv2.EVENT_LBUTTONUP:
-        perspective_corners.append((x, y))
-
-
-scene_points = np.float32([  # default
-    [559, 2],
-    [293, 2],
-    [3, 580],
-    [848, 577],
-])
-M = None
-
-warp_width = 600
-warp_height = 800
-
-
-def init_perspective_box():
-    global scene_points
-    global M
-    scene_points = np.float32(perspective_corners)
-    target_points = np.float32([[warp_width - 1, 0], [0, 0], [0, warp_height - 1], [warp_width - 1, warp_height - 1]])
-    M = cv2.getPerspectiveTransform(scene_points, target_points)
-
 
 def divide_boundbox(mss_base):
     global callback_img
-    # set perspective corners
-    callback_img = cv2.imread("boundbox.png") # fixme - make sure this is saved in first steps
-    cv2.imshow("screenshot", callback_img)
-    cv2.setMouseCallback("screenshot", perspective_mouse_callback)
-    _ = cv2.waitKey()
-    init_perspective_box()
-
-    # display perspective warp
-    warped = cv2.warpPerspective(callback_img, M, dsize=(warp_width, warp_height))
-    cv2.imshow("screenshot", warped)
-    _ = cv2.waitKey()
 
     # set colors
     callback_img = cv2.imread("screenshots/boundbox_example.png") # fixme - somehow get screenshot of actual fretboard
@@ -287,13 +179,9 @@ def loop_boundbox_feed(mss_base):
 def main():
     with mss() as sct:
         sc = ScreenCapture(sct, MONITOR)
-    #init_properties()
-    # set_boundbox(sct)
-    # save_bounded_img(sct)
 
     # divide_boundbox(sct)
 
-    # init_perspective_box()
     # loop_boundbox_feed(sct)
 
     return

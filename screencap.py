@@ -1,4 +1,6 @@
 # screencap.py - contains class that initializes and streams a portion of a user's screen
+import time
+
 import numpy as np
 import cv2
 from mss.base import MSSBase
@@ -6,16 +8,19 @@ import configparser
 
 
 PROPERTIES_PATH = "properties.ini"
-PREVIEW_SCALE_FACTOR = 2
+NOTES_SCREENSHOT_PATH = "screenshots/note_colors.png"
+MONITOR_PREVIEW_SCALE_FACTOR = 2
 WIDTH_STRETCH = 0.75
 HEIGHT_STRETCH = 1.5
+WARPBOX_PREVIEW_FPS = 30
 
 fretboard_coords = list()
+callback_img = None
 
 
 def sbb_mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-        fretboard_coords.append((x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
+        fretboard_coords.append((x * MONITOR_PREVIEW_SCALE_FACTOR, y * MONITOR_PREVIEW_SCALE_FACTOR))
         print("Point set")
 
 
@@ -29,16 +34,34 @@ class ScreenCapture:
         print()
         response = ""
         while response.lower() not in ('y', 'n'):
-            response = input("Use properties from file? (y/n) ")
+            response = input("Use screen capture properties from file? (y/n) ")
         if response.lower() == 'y':
             self._load_properties()
         else:
             self._set_properties()
         self._show_preview()
+        response = ""
+        while response.lower() not in ('y', 'n'):
+            response = input("Use color ranges from file? (y/n) ")
+        if response.lower() == 'y':
+            self._load_colors()
+        else:
+            self._set_colors()
 
     def _load_properties(self):
         with open(PROPERTIES_PATH) as file:
-            pass # TODO
+            config = configparser.ConfigParser()
+            config.read(PROPERTIES_PATH)
+            # config[section][key]
+            fb_corners = config["fretboard_corners"]
+            tr = np.array([int(fb_corners["tr_x"]), int(fb_corners["tr_y"])])
+            tl = np.array([int(fb_corners["tl_x"]), int(fb_corners["tl_y"])])
+            bl = np.array([int(fb_corners["bl_x"]), int(fb_corners["bl_y"])])
+            br = np.array([int(fb_corners["br_x"]), int(fb_corners["br_y"])])
+            self._boundbox = dict()
+            for key in config["bounding_box"]:
+                self._boundbox[key] = int(config["bounding_box"][key])
+            self._set_warping(tr, tl, bl, br)
 
     def _set_properties(self):
         config = configparser.ConfigParser()
@@ -56,8 +79,8 @@ class ScreenCapture:
     def _set_bounding_box(self):
         mon = self._mss.monitors[self._mon_num]
         screenshot = np.array(self._mss.grab(mon))
-        small_width = screenshot.shape[1] // PREVIEW_SCALE_FACTOR
-        small_height = screenshot.shape[0] // PREVIEW_SCALE_FACTOR
+        small_width = screenshot.shape[1] // MONITOR_PREVIEW_SCALE_FACTOR
+        small_height = screenshot.shape[0] // MONITOR_PREVIEW_SCALE_FACTOR
         small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
         cv2.imshow("screenshot", small_screenshot)
         cv2.setMouseCallback("screenshot", sbb_mouse_callback)
@@ -83,7 +106,6 @@ class ScreenCapture:
         max_y = np.max(fb_coords[:, 1])
         bl = np.array([np.min(fb_coords[:, 0]), max_y])
         br = np.array([np.max(fb_coords[:, 0]), max_y])
-        # todo - might need to cast these to integers
 
         fretboard_corners = {
             "tr_x": str(tr[0]),
@@ -108,37 +130,41 @@ class ScreenCapture:
             "height": int(bb_height)
         }
 
+        self._set_warping(tr, tl, bl, br)
+
+        # TODO - break this into smaller methods
+
+        return fretboard_corners
+
+    def _set_warping(self, tr, tl, bl, br):
+        self._warp_width = self._boundbox["width"] * WIDTH_STRETCH
+        self._warp_height = self._boundbox["height"] * HEIGHT_STRETCH
         scene_points = np.float32([
             [tr[0] - self._boundbox["left"], 0],
             [tl[0] - self._boundbox["left"], 0],
             [0, bl[1] - self._boundbox["top"]],
             [br[0] - self._boundbox["left"], bl[1] - self._boundbox["top"]]
         ])
-
         target_points = np.float32([
-            [int((self._boundbox["width"] - 1) * WIDTH_STRETCH), 0],
+            [int(self._warp_width - 1), 0],
             [0, 0],
-            [0, int((self._boundbox["height"] - 1) * HEIGHT_STRETCH)],
-            [int((self._boundbox["width"] - 1) * WIDTH_STRETCH), int((self._boundbox["height"] - 1) * HEIGHT_STRETCH)]
+            [0, int(self._warp_height - 1)],
+            [int(self._warp_width - 1), int(self._warp_height - 1)]
         ])
-        # print("DEBUG - scene points")
-        # print(scene_points)
-        # print("DEBUG - target points")
-        # print(target_points)
         self._M = cv2.getPerspectiveTransform(scene_points, target_points)
 
-        # TODO - break this into smaller methods
-
-        return fretboard_corners
-
     def _show_preview(self):
-        screenshot = np.array(self._mss.grab(self._boundbox))
-        warped = cv2.warpPerspective(screenshot, self._M, dsize=(
-                                         int(self._boundbox["width"] * WIDTH_STRETCH),
-                                         int(self._boundbox["height"] * HEIGHT_STRETCH)
-        ))
+        print("Showing preview. Press 'q' to continue.")
+        preview_ms_delay = 1000 // WARPBOX_PREVIEW_FPS
+        while cv2.waitKey(preview_ms_delay) != ord('q'):
+            screenshot = np.array(self._mss.grab(self._boundbox))
+            warped = cv2.warpPerspective(screenshot, self._M, dsize=(int(self._warp_width), int(self._warp_height)))
+            cv2.imshow("screenshot", screenshot)
+            cv2.imshow("warped", warped)
+        cv2.destroyAllWindows()
 
-        cv2.imshow("screenshot", screenshot)
-        cv2.imshow("warped0", warped)
-        print("Press any key to continue.")
-        _ = cv2.waitKey()
+    def _load_colors(self):
+        pass # todo
+
+    def _set_colors(self):
+        pass # todo
