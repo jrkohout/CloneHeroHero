@@ -285,7 +285,7 @@ def loop_boundbox_feed(mss_base):
 
 def main():
     with mss() as sct:
-        sc = ScreenCapture(sct)
+        sc = ScreenCapture(sct, MONITOR)
     #init_properties()
     # set_boundbox(sct)
     # save_bounded_img(sct)
