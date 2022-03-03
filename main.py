@@ -5,7 +5,9 @@ import time
 import cv2
 from mss import mss
 from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
-from screencap import ScreenCapture
+
+from colorcap import ColorCapture
+from screenfeed import ScreenFeed
 
 
 # FIXME - for the defaults, it would be best to save them to a file, and allow program to either load the defaults
@@ -53,7 +55,8 @@ strum_counter = 0
 class Hero:
     def __init__(self):
         with mss() as sct:
-            self._sc = ScreenCapture(sct, MONITOR)
+            self._s_feed = ScreenFeed(sct, MONITOR)
+        self._c_cap = ColorCapture()
         self._old_fretboard = None  # TODO start here (design first)
         self._old_bottom_y = None
 
@@ -121,7 +124,7 @@ class Hero:
 
 def main():
     hero = Hero()
-    hero.play_loop()
+    # hero.play_loop()
 
 
 if __name__ == "__main__":
