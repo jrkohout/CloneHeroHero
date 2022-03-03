@@ -137,6 +137,7 @@ def color_mouse_callback(event, x, y, flags, param):
             hsv_setter_idx += 1
 
 
+# perspective corners with respect to the 0, 0 of the bounding box
 perspective_corners = [[559, 2], [293, 2], [3, 580], [848, 577]] # fixme
 
 

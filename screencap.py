@@ -7,8 +7,8 @@ import configparser
 
 PROPERTIES_PATH = "properties.ini"
 PREVIEW_SCALE_FACTOR = 2
-WARP_WIDTH = 600
-WARP_HEIGHT = 800
+WIDTH_STRETCH = 0.75
+HEIGHT_STRETCH = 1.5
 
 fretboard_coords = list()
 
@@ -69,15 +69,12 @@ class ScreenCapture:
                     print("Please click on all four corners of fret board.")
                 else:
                     keep_looping = False
+        cv2.destroyWindow("screenshot")
         fb_coords = np.array(fretboard_coords, dtype=int)
         # top right and top left will have x values of the highest two points
         # top y points share the smallest y
         top_two = fb_coords[np.argsort(fb_coords[:, 1])[:2]]
-        print("DEBUG - top two")
-        print(top_two)
         top_two_sorted = top_two[np.argsort(top_two[:, 0])]
-        print("DEBUG - top two sorted")
-        print(top_two_sorted)
         min_y = np.min(fb_coords[:, 1])
         tr = np.array([top_two_sorted[1, 0], min_y])
         tl = np.array([top_two_sorted[0, 0], min_y])
@@ -87,16 +84,6 @@ class ScreenCapture:
         bl = np.array([np.min(fb_coords[:, 0]), max_y])
         br = np.array([np.max(fb_coords[:, 0]), max_y])
         # todo - might need to cast these to integers
-
-        scene_points = np.float32([tr, tl, br, bl])
-        target_points = np.float32(
-            [[WARP_WIDTH - 1, 0],
-             [0, 0],
-             [0, WARP_HEIGHT - 1],
-             [WARP_WIDTH - 1, WARP_HEIGHT - 1]]
-        )
-        self._M = cv2.getPerspectiveTransform(scene_points, target_points)
-        # TODO - store tr, tl, bl, br as properties - left off here
 
         fretboard_corners = {
             "tr_x": str(tr[0]),
@@ -109,8 +96,6 @@ class ScreenCapture:
             "br_y": str(br[1]),
         }
 
-        print("DEBUG - tr:{}, tl:{}, bl:{}, br:{}".format(tr, tl, bl, br))
-
         bb_left = bl[0]
         bb_top = min(tl[1], tr[1])
         bb_width = br[0] - bb_left
@@ -122,18 +107,38 @@ class ScreenCapture:
             "width": int(bb_width),
             "height": int(bb_height)
         }
-        print("DEBUG: Set boundbox to:", self._boundbox)
+
+        scene_points = np.float32([
+            [tr[0] - self._boundbox["left"], 0],
+            [tl[0] - self._boundbox["left"], 0],
+            [0, bl[1] - self._boundbox["top"]],
+            [br[0] - self._boundbox["left"], bl[1] - self._boundbox["top"]]
+        ])
+
+        target_points = np.float32([
+            [int((self._boundbox["width"] - 1) * WIDTH_STRETCH), 0],
+            [0, 0],
+            [0, int((self._boundbox["height"] - 1) * HEIGHT_STRETCH)],
+            [int((self._boundbox["width"] - 1) * WIDTH_STRETCH), int((self._boundbox["height"] - 1) * HEIGHT_STRETCH)]
+        ])
+        # print("DEBUG - scene points")
+        # print(scene_points)
+        # print("DEBUG - target points")
+        # print(target_points)
+        self._M = cv2.getPerspectiveTransform(scene_points, target_points)
+
         # TODO - break this into smaller methods
 
         return fretboard_corners
 
     def _show_preview(self):
         screenshot = np.array(self._mss.grab(self._boundbox))
-        warped = cv2.warpPerspective(screenshot, self._M, dsize=(WARP_WIDTH, WARP_HEIGHT))
+        warped = cv2.warpPerspective(screenshot, self._M, dsize=(
+                                         int(self._boundbox["width"] * WIDTH_STRETCH),
+                                         int(self._boundbox["height"] * HEIGHT_STRETCH)
+        ))
 
         cv2.imshow("screenshot", screenshot)
-        _ = cv2.waitKey()
-
-        cv2.imshow("screenshot", warped)
+        cv2.imshow("warped0", warped)
         print("Press any key to continue.")
         _ = cv2.waitKey()
