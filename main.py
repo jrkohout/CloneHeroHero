@@ -1,38 +1,33 @@
 # CloneHeroHero - Clone Hero AI
 
 import numpy as np
-import time
 import cv2
 from mss import mss
-from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
 
 from colorcap import ColorCapture
 from guitar import Guitar
 from screenfeed import ScreenFeed
 
-
-# FIXME - for the defaults, it would be best to save them to a file, and allow program to either load the defaults
-#  from the file and start running, or do the setup phase first (saving to file)
-
 MONITOR = 1  # 1 should be main monitor
 
-TARGET_FPS = 240  # FIXME - adjust fps
+TARGET_FPS = 240
 MS_DELAY = 1000 // TARGET_FPS
 
-AREA_THRESH = 100
+AREA_THRESH = 1500
 NO_FRET_PROP = 0.85
+
 
 def _get_bottom_y(mask):
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
 
-    mask_copy = mask.copy()
+    mask_copy = mask.copy()  # TODO - temporary for development
     bottom_y = 0
     for i in range(1, num_labels):
         if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:  # FIXME adjust area threshold
             # centroid: [x, y]
             if centroids[i][1] > bottom_y:
                 bottom_y = centroids[i][1]
-            cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 35, [180, 180, 180], thickness=7) # (int(centroids[i][0]), int(centroids[i][1]))
+            cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 35, [180, 180, 180], thickness=7)
     return bottom_y, mask_copy
 
 
@@ -66,9 +61,11 @@ class Hero:
                 cmasks.append(circled_mask)
 
             notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
-            self._guitar.strum(notes)
+
             if np.any(notes):
-                print("Some note has crossed (", notes, ")")  # todo emit signal
+                self._guitar.push_strum(notes)
+                print("DEBUG: Some note has crossed (", notes, ")")  # todo emit signal
+            self._guitar.check_strum()
 
             self._old_bottom_y = new_bottom_y.copy()
 
@@ -76,8 +73,6 @@ class Hero:
             for i in range(5):
                 cv2.imshow("column_{}".format(i), cmasks[i])
                 cv2.resizeWindow("column_{}".format(i), 200, 800)
-
-            # cv2.imshow("feed", frame)  # live perspective-warped feed
 
             if cv2.waitKey(MS_DELAY) == ord('q'):
                 print("quit.")
