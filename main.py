@@ -1,214 +1,100 @@
 # CloneHeroHero - Clone Hero AI
 
 import numpy as np
-import time
 import cv2
 from mss import mss
-from PIL import Image
-from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
 
+from colorcap import ColorCapture
+from guitar import Guitar
+from screenfeed import ScreenFeed
 
 MONITOR = 1  # 1 should be main monitor
 
-PREVIEW_SCALE_FACTOR = 2
 TARGET_FPS = 240
-
 MS_DELAY = 1000 // TARGET_FPS
 
-STRUM_KEY = 'DOWN'
-cidx2key = {  # todo could probably change this to an array
-    0: 'g',  # green
-    1: 'f',  # red
-    2: 'd',  # yellow
-    3: 's',  # blue
-    4: 'a'   # orange
-}
-
-# no notes => 300,000 - 450,000 ish value for a note
-PIXEL_THRESHOLD = 500_000
-
-STRUMS_PER_SECOND = 6
-STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
-
-boundbox_coords = [(596, 912), (1334, 996)]
-boundbox = {'left': 596, 'top': 912, 'width': 738, 'height': 84}
-
-callback_img = None
-
-bb_left_offset = None
-bb_top_offset = None
-bb_height = None
-bb_width = None
-
-hsv_lowers = np.uint8([
-    [55, 100, 100],   # green
-    [0, 100, 100],    # red
-    [25, 100, 100],   # yellow
-    [100, 100, 100],  # blue
-    [10, 100, 100]    # orange
-])
-hsv_uppers = np.uint8([
-    [65, 255, 255],
-    [5, 255, 255],
-    [35, 255, 255],
-    [110, 255, 255],
-    [20, 255, 255]
-])
-hsv_setter_idx = 0
-
-last_strum = time.perf_counter_ns()
-
-strum_counter = 0
+AREA_THRESH = 1500
+NO_FRET_PROP = 0.85
 
 
-def sbb_mouse_callback(event, x, y, flags, param):
-    # EVENT_LBUTTONDBLCLK - left double click
-    # EVENT_LBUTTONDOWN - left mouse press
-    # EVENT_LBUTTONUP - left mouse release
-    if event == cv2.EVENT_LBUTTONUP:
-        print("x: {}, y: {}".format(x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
-        boundbox_coords.append((x * PREVIEW_SCALE_FACTOR, y * PREVIEW_SCALE_FACTOR))
+def _get_bottom_y(mask):
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
+
+    mask_copy = mask.copy()  # TODO - temporary for development
+    bottom_y = 0
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:  # FIXME adjust area threshold
+            # centroid: [x, y]
+            if centroids[i][1] > bottom_y:
+                bottom_y = centroids[i][1]
+            cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 35, [180, 180, 180], thickness=7)
+    return bottom_y, mask_copy
 
 
-def set_boundbox(mss_base):
-    print("Available Monitors:")
-    for mon in mss_base.monitors:
-        print(mon)
-    mon = mss_base.monitors[MONITOR]
-    screenshot = np.array(mss_base.grab(mon))
-    small_width = screenshot.shape[1] // PREVIEW_SCALE_FACTOR
-    small_height = screenshot.shape[0] // PREVIEW_SCALE_FACTOR
-    small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
-    cv2.imshow("screenshot", small_screenshot)
-    cv2.setMouseCallback("screenshot", sbb_mouse_callback)
-    while cv2.waitKey() != ord('q'):
-        pass  # TODO - maybe limit to only be able to click twice somehow
-    set_offsets()
-    global boundbox
-    boundbox = {
-        'left': bb_left_offset,
-        'top': bb_top_offset,
-        'width': bb_width,
-        'height': bb_height
-    }
-    print("Set boundbox to:", boundbox)
+class Hero:
+    def __init__(self, do_previews, load_sf_properties, load_cc_properties):
+        with mss() as sct:
+            self._s_feed = ScreenFeed(sct, MONITOR, do_previews, load_sf_properties)
+        self._c_cap = ColorCapture(do_previews, load_cc_properties)
+        self._old_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange
+        self._guitar = Guitar()
+
+    def play_loop(self):
+        new_bottom_y = np.zeros(5)
+        while True:
+            frame = self._s_feed.next_frame()
+            no_fret_idx = int(frame.shape[0] * NO_FRET_PROP)
+            frame_no_fret = frame[:no_fret_idx, :]
+            # todo - better integrate the cutting off of image
+            col_width = frame_no_fret.shape[1] / 5  # keep as float
+
+            # divide board into 5 columns (green, red, yellow, blue, orange)
+            # todo try to vectorize this, maybe keeping cols as a numpy array or indices of one
+            cols = list()
+            for i in range(5):
+                cols.append(frame_no_fret[:, int(i * col_width):int((i+1) * col_width), :])
+
+            cmasks = list()  # todo probably don't want to store these, just using this to display masks for development
+            for i in range(5):
+                mask = self._c_cap.mask(cols[i], i)
+                new_bottom_y[i], circled_mask = _get_bottom_y(mask)
+                cmasks.append(circled_mask)
+
+            notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
+
+            if np.any(notes):
+                self._guitar.push_strum(notes)
+                print("DEBUG: Some note has crossed (", notes, ")")  # todo emit signal
+            self._guitar.check_strum()
+
+            self._old_bottom_y = new_bottom_y.copy()
+
+            # todo TEMPORARY: DEVELOPMENT
+            for i in range(5):
+                cv2.imshow("column_{}".format(i), cmasks[i])
+                cv2.resizeWindow("column_{}".format(i), 200, 800)
+
+            if cv2.waitKey(MS_DELAY) == ord('q'):
+                print("quit.")
+                cv2.destroyAllWindows()
+                break
 
 
-def set_offsets():
-    global bb_left_offset
-    global bb_top_offset
-    global bb_width
-    global bb_height
-    bb_coords = np.array(boundbox_coords, dtype=np.int32)
-    bb_left_offset = int(np.min(bb_coords[:, 0]))
-    bb_top_offset = int(np.min(bb_coords[:, 1]))
-    bb_width = int(np.max(bb_coords[:, 0])) - bb_left_offset
-    bb_height = int(np.max(bb_coords[:, 1])) - bb_top_offset
-
-
-def save_bounded_img(mss_base):
-    print("bounding box:", boundbox)
-    # print("dtype", mon["left"].dtype)
-    screenshot = mss_base.grab(boundbox)
-    cv2.imshow("screenshot", np.array(screenshot))
-    _ = cv2.waitKey()
-    cv2.imwrite("boundbox.png", np.array(screenshot))
-
-
-def color_mouse_callback(event, x, y, flags, param):
-    global hsv_lowers
-    global hsv_uppers
-    global hsv_setter_idx
-    if event == cv2.EVENT_LBUTTONUP:
-        print("x: {}, y: {}".format(x, y))
-        # bgr - [0-255, 0-255, 0-255]
-        # hsv - [0-179, 0-255, 0-255]
-        bgr = callback_img[y, x, :]
-        hsv = cv2.cvtColor(callback_img[y, x, :].reshape((1, 1, 3)), cv2.COLOR_BGR2HSV)
-        print("BGR:", bgr)
-        print("HSV:", hsv)
-        if hsv_setter_idx < 5:
-            hsv_lowers[hsv_setter_idx] = np.uint8([max(hsv[0, 0, 0] - 5, 0), 100, 100])  # TODO - adjust blue maybe
-            hsv_uppers[hsv_setter_idx] = np.uint8([min(hsv[0, 0, 0] + 5, 179), 255, 255])
-            print("set color ranges for", hsv_setter_idx)
-            hsv_setter_idx += 1
-
-
-def divide_boundbox(mss_base):
-    global callback_img
-    callback_img = cv2.imread("screenshots/boundbox_example.png")
-    cv2.imshow("screenshot", callback_img)
-    cv2.setMouseCallback("screenshot", color_mouse_callback)
-
-    hsv_img = cv2.cvtColor(callback_img, cv2.COLOR_BGR2HSV)
-    _ = cv2.waitKey()
-
-    for i in range(5):
-        mask = cv2.inRange(hsv_img, hsv_lowers[i], hsv_uppers[i])  # red mask
-        cv2.imshow("screenshot", mask)
-        _ = cv2.waitKey()
-
-
-def get_notes(fret_box):
-    fret_box_hsv = cv2.cvtColor(fret_box, cv2.COLOR_BGR2HSV)
-    full_mask = np.zeros(fret_box.shape[:2])
-    notes = []
-    for idx, (lower, upper) in enumerate(zip(hsv_lowers[:4], hsv_uppers[:4])): # fixme - excluding orange
-        # mask to index color
-        mask = cv2.inRange(fret_box_hsv, lower, upper)
-        full_mask += mask
-        pixel_sum = mask.sum()
-        # print("sum", idx, ':', pixel_sum)
-        if pixel_sum > PIXEL_THRESHOLD:
-            # TODO - finaggle with the delay stuff
-            #  also, every time a note is hit, orange sparks are let off, which triggers the orange note to play.
-            #  need to maybe make special case for orange, or tighten threshold
-            #  or make a better way of strumming notes that isn't just if the segmented pixels have a greater sum than some threshold - try to get position info?
-            notes.append(idx)
-
-    return notes, full_mask
-
-
-def strum(note_list):
-    global last_strum
-    global strum_counter
-    current_ns = time.perf_counter_ns()
-    if current_ns - last_strum > STRUM_DELAY_NS:
-        for note in note_list:
-            # print(cidx2key[note])
-            pressKey(cidx2key[note])
-        if len(note_list) > 0:
-            press(STRUM_KEY)
-            print("strum", strum_counter)
-            strum_counter += 1
-        for note in note_list:
-            # pass
-            releaseKey(cidx2key[note])
-        last_strum = current_ns
-
-
-def loop_boundbox_feed(mss_base):
-    while True:
-        screenshot = np.array(mss_base.grab(boundbox))
-        notes, full_mask = get_notes(screenshot)
-        strum(notes)
-        cv2.imshow("mask", full_mask)
-        cv2.imshow("screenshot", screenshot)
-
-        if cv2.waitKey(MS_DELAY) == ord('q'):
-            print("quit.")
-            cv2.destroyAllWindows()
-            break
+# returns true if yes, false if no
+def prompt_yn(prompt):
+    response = ""
+    while response.lower() not in ('y', 'n'):
+        response = input(prompt)
+    return response.lower() == 'y'
 
 
 def main():
-    with mss() as sct:
-        # set_boundbox(sct)
-        # save_bounded_img(sct)
-        # divide_boundbox(sct)
-        loop_boundbox_feed(sct)
+    do_previews = not prompt_yn("Skip previews of screen feed and color capture? (y/n) ")
+    load_sfp = prompt_yn("Load screen feed properties from file? (y/n) ")
+    load_ccp = prompt_yn("Load color capture properties from file? (y/n) ")
 
-    return
+    hero = Hero(do_previews, load_sfp, load_ccp)
+    hero.play_loop()
 
 
 if __name__ == "__main__":
