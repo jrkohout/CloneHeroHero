@@ -1,5 +1,6 @@
 # screenfeed.py - contains class that initializes and streams a portion of a user's screen
 
+import math
 import numpy as np
 import cv2
 from mss.base import MSSBase
@@ -11,10 +12,30 @@ import settings
 fretboard_coords = list()
 
 
+def calculate_clipped_corners(tr, tl, bl, br):
+    # clip off top and bottom of fretboard
+    rail_length = ((tl[0] - bl[0]) ** 2 + (bl[1] - tl[1]) ** 2) ** 0.5
+    angle = math.atan2(tl[0] - bl[0], bl[1] - tl[1])
+
+    # these are all positive based on how the point-picking is characterized
+    # (as long as fretboard looks like this -> / \)
+    bottom_y = settings.BOTTOM_SNIP_PROPORTION * rail_length * math.cos(angle)
+    bottom_x = settings.BOTTOM_SNIP_PROPORTION * rail_length * math.sin(angle)
+    top_y = settings.TOP_SNIP_PROPORTION * rail_length * math.cos(angle)
+    top_x = settings.TOP_SNIP_PROPORTION * rail_length * math.sin(angle)
+
+    clipped_tl = np.array([int(tl[0] - top_x), int(tl[1] + top_y)])
+    clipped_bl = np.array([int(bl[0] + bottom_x), int(bl[1] - bottom_y)])
+    clipped_tr = np.array([int(tr[0] + top_x), int(tr[1] + top_y)])
+    clipped_br = np.array([int(br[0] - bottom_x), int(br[1] - bottom_y)])
+
+    return clipped_tr, clipped_tl, clipped_bl, clipped_br
+
+
 def sbb_mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         fretboard_coords.append(
-            (x * settings.MONITOR_PREVIEW_SHRINK_FACTOR, y * settings.MONITOR_PREVIEW_SHRINK_FACTOR)
+            (int(x * settings.MONITOR_PREVIEW_SHRINK_FACTOR), int(y * settings.MONITOR_PREVIEW_SHRINK_FACTOR))
         )
         print("Point set")
 
@@ -35,40 +56,30 @@ class ScreenFeed:
         if show_preview:
             self._show_preview()
 
-
     def _load_properties(self):
-        with open(settings.PROPERTIES_PATH) as file:
-            config = configparser.ConfigParser()
-            config.read(settings.PROPERTIES_PATH)
-            # config[section][key]
-            fb_corners = config["fretboard_corners"]
-            tr = np.array([int(fb_corners["tr_x"]), int(fb_corners["tr_y"])])
-            tl = np.array([int(fb_corners["tl_x"]), int(fb_corners["tl_y"])])
-            bl = np.array([int(fb_corners["bl_x"]), int(fb_corners["bl_y"])])
-            br = np.array([int(fb_corners["br_x"]), int(fb_corners["br_y"])])
-            self._boundbox = dict()
-            for key in config["bounding_box"]:
-                self._boundbox[key] = int(config["bounding_box"][key])
-            self._set_warping(tr, tl, bl, br)
+        config = configparser.ConfigParser()
+        config.read(settings.PROPERTIES_PATH)
+        # config[section][key]
+        fb_corners = config["fretboard_corners"]
+        tr = np.array([int(fb_corners["tr_x"]), int(fb_corners["tr_y"])])
+        tl = np.array([int(fb_corners["tl_x"]), int(fb_corners["tl_y"])])
+        bl = np.array([int(fb_corners["bl_x"]), int(fb_corners["bl_y"])])
+        br = np.array([int(fb_corners["br_x"]), int(fb_corners["br_y"])])
+        clipped_tr, clipped_tl, clipped_bl, clipped_br = calculate_clipped_corners(tr, tl, bl, br)
+        self._set_boundbox(clipped_tr, clipped_tl, clipped_bl, clipped_br)
+        self._set_warping(clipped_tr, clipped_tl, clipped_bl, clipped_br)
 
     def _set_properties(self):
         config = configparser.ConfigParser()
-
-        config["fretboard_corners"] = self._set_bounding_box()
-
-        bb_s2s = {}
-        for key in self._boundbox.keys():
-            bb_s2s[key] = str(self._boundbox[key])
-        config["bounding_box"] = bb_s2s
-
+        config["fretboard_corners"] = self._set_capture_bounds()
         with open(settings.PROPERTIES_PATH, 'w') as configfile:
             config.write(configfile)
 
-    def _set_bounding_box(self):
+    def _set_capture_bounds(self):
         mon = self._mss.monitors[self._mon_num]
         screenshot = np.array(self._mss.grab(mon))
-        small_width = screenshot.shape[1] // settings.MONITOR_PREVIEW_SHRINK_FACTOR
-        small_height = screenshot.shape[0] // settings.MONITOR_PREVIEW_SHRINK_FACTOR
+        small_width = int(screenshot.shape[1] / settings.MONITOR_PREVIEW_SHRINK_FACTOR)
+        small_height = int(screenshot.shape[0] / settings.MONITOR_PREVIEW_SHRINK_FACTOR)
         small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
         cv2.imshow("screenshot", small_screenshot)
         cv2.setMouseCallback("screenshot", sbb_mouse_callback)
@@ -106,21 +117,22 @@ class ScreenFeed:
             "br_y": str(br[1]),
         }
 
+        clipped_tr, clipped_tl, clipped_bl, clipped_br = calculate_clipped_corners(tr, tl, bl, br)
+        self._set_boundbox(clipped_tr, clipped_tl, clipped_bl, clipped_br)
+        self._set_warping(clipped_tr, clipped_tl, clipped_bl, clipped_br)
+        return fretboard_corners
+
+    def _set_boundbox(self, tr, tl, bl, br):
         bb_left = bl[0]
         bb_top = min(tl[1], tr[1])
         bb_width = br[0] - bb_left
         bb_height = max(bl[1], br[1]) - bb_top
-
         self._boundbox = {
             "left": int(bb_left),
             "top": int(bb_top),
             "width": int(bb_width),
             "height": int(bb_height)
         }
-
-        self._set_warping(tr, tl, bl, br)
-        # TODO - break this into smaller methods
-        return fretboard_corners
 
     def _set_warping(self, tr, tl, bl, br):
         self._warp_width = self._boundbox["width"] * settings.WIDTH_STRETCH

@@ -38,16 +38,13 @@ class Hero:
         self._guitar.start_thread()
         while True:
             frame = self._s_feed.next_frame()
-            no_fret_idx = int(frame.shape[0] * settings.NO_FRET_PROP)
-            frame_no_fret = frame[:no_fret_idx, :]
-            # todo - better integrate the cutting off of image
-            col_width = frame_no_fret.shape[1] / 5  # keep as float
+            col_width = frame.shape[1] / 5  # keep as float
 
             # divide board into 5 columns (green, red, yellow, blue, orange)
             # todo try to vectorize this, maybe keeping cols as a numpy array or indices of one
             cols = list()
             for i in range(5):
-                cols.append(frame_no_fret[:, int(i * col_width):int((i+1) * col_width), :])
+                cols.append(frame[:, int(i * col_width):int((i+1) * col_width), :])
 
             cmasks = list()  # todo probably don't want to store these, just using this to display masks for development
             for i in range(5):
@@ -64,10 +61,9 @@ class Hero:
 
             # todo TEMPORARY: DEVELOPMENT
             cv2.imshow("feed", frame)
-            cv2.imshow("feed_no_fret", frame_no_fret)
             for i in range(5):
                 cv2.imshow("column_{}".format(i), cmasks[i])
-                cv2.resizeWindow("column_{}".format(i), 200, 800)
+                cv2.resizeWindow("column_{}".format(i), 200, frame.shape[0])
 
             k = cv2.waitKey(settings.MS_DELAY)
             if k != -1:
