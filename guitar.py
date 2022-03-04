@@ -41,13 +41,14 @@ class Guitar:
                 press(STRUM_KEY)
                 for note in notes:
                     releaseKey(note)
-        self._thread.join()
 
     # start the guitar's check_strum loop
     def start_thread(self):
         self._thread.start()
-        print("Started guitar thread")
+        print("Started guitar thread.")
 
-    # enqueues the end-signal to have check_strum() terminate and join
+    # enqueues the end-signal to terminate check_strum(), joins with it
     def end_thread(self):
         self._strum_queue.put((False, 0, np.zeros(5).astype(bool)))
+        self._thread.join()
+        print("Terminated guitar thread.")
