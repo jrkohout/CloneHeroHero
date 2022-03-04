@@ -13,7 +13,7 @@ MONITOR = 1  # 1 should be main monitor
 TARGET_FPS = 240
 MS_DELAY = 1000 // TARGET_FPS
 
-AREA_THRESH = 1500
+AREA_THRESH = 1500  # TODO - adjust
 NO_FRET_PROP = 0.85
 
 
@@ -41,6 +41,7 @@ class Hero:
 
     def play_loop(self):
         new_bottom_y = np.zeros(5)
+        self._guitar.start_thread()
         while True:
             frame = self._s_feed.next_frame()
             no_fret_idx = int(frame.shape[0] * NO_FRET_PROP)
@@ -63,9 +64,8 @@ class Hero:
             notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
 
             if np.any(notes):
-                self._guitar.push_strum(notes)
+                self._guitar.enqueue_strum(notes)
                 print("DEBUG: Some note has crossed (", notes, ")")  # todo emit signal
-            self._guitar.check_strum()
 
             self._old_bottom_y = new_bottom_y.copy()
 
@@ -78,6 +78,7 @@ class Hero:
                 print("quit.")
                 cv2.destroyAllWindows()
                 break
+        self._guitar.end_thread()
 
 
 # returns true if yes, false if no
