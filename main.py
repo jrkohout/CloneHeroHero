@@ -7,6 +7,7 @@ from mss import mss
 from pyKey import pressKey, releaseKey, press, sendSequence, showKeys
 
 from colorcap import ColorCapture
+from guitar import Guitar
 from screenfeed import ScreenFeed
 
 
@@ -18,39 +19,8 @@ MONITOR = 1  # 1 should be main monitor
 TARGET_FPS = 240  # FIXME - adjust fps
 MS_DELAY = 1000 // TARGET_FPS
 
-STRUM_KEY = 'DOWN'
-cidx2key = {  # todo could probably change this to an array
-    0: 'g',  # green
-    1: 'f',  # red
-    2: 'd',  # yellow
-    3: 's',  # blue
-    4: 'a'   # orange
-}
-
-# todo maybe remove these? don't want much delay
-# STRUMS_PER_SECOND = 6
-# STRUM_DELAY_NS = 1 / STRUMS_PER_SECOND * 1e9
-
 AREA_THRESH = 100
-
-strum_counter = 0
-
-
-# def strum(note_list):
-#     global last_strum
-#     global strum_counter
-#     if False: # fixme
-#         for note in note_list:
-#             # print(cidx2key[note])
-#             pressKey(cidx2key[note])
-#         if len(note_list) > 0:
-#             press(STRUM_KEY)
-#             print("strum", strum_counter)
-#             strum_counter += 1
-#         for note in note_list:
-#             # pass
-#             releaseKey(cidx2key[note])
-#         last_strum = current_ns
+NO_FRET_PROP = 0.85
 
 def _get_bottom_y(mask):
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
@@ -72,24 +42,22 @@ class Hero:
             self._s_feed = ScreenFeed(sct, MONITOR, do_previews, load_sf_properties)
         self._c_cap = ColorCapture(do_previews, load_cc_properties)
         self._old_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange
-
-    # col0 = frame[:, int(0 * col_width):int(1 * col_width), :]
-    # col1 = frame[:, int(1 * col_width):int(2 * col_width), :]
-    # col2 = frame[:, int(2 * col_width):int(3 * col_width), :]
-    # col3 = frame[:, int(3 * col_width):int(4 * col_width), :]
-    # col4 = frame[:, int(4 * col_width):int(5 * col_width), :]
+        self._guitar = Guitar()
 
     def play_loop(self):
         new_bottom_y = np.zeros(5)
         while True:
-            frame = self._s_feed.next_frame() # FIXME - need to cut off image before the fret either here or in screencap
-            col_width = frame.shape[1] / 5  # keep as float
+            frame = self._s_feed.next_frame()
+            no_fret_idx = int(frame.shape[0] * NO_FRET_PROP)
+            frame_no_fret = frame[:no_fret_idx, :]
+            # todo - better integrate the cutting off of image
+            col_width = frame_no_fret.shape[1] / 5  # keep as float
 
             # divide board into 5 columns (green, red, yellow, blue, orange)
             # todo try to vectorize this, maybe keeping cols as a numpy array or indices of one
             cols = list()
             for i in range(5):
-                cols.append(frame[:, int(i * col_width):int((i+1) * col_width), :])
+                cols.append(frame_no_fret[:, int(i * col_width):int((i+1) * col_width), :])
 
             cmasks = list()  # todo probably don't want to store these, just using this to display masks for development
             for i in range(5):
@@ -98,16 +66,11 @@ class Hero:
                 cmasks.append(circled_mask)
 
             notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
+            self._guitar.strum(notes)
             if np.any(notes):
                 print("Some note has crossed (", notes, ")")  # todo emit signal
 
-            # print("old -", self._old_bottom_y)
-            # print("new -", new_bottom_y)
-            # print()
-
             self._old_bottom_y = new_bottom_y.copy()
-
-            # strum(notes) todo
 
             # todo TEMPORARY: DEVELOPMENT
             for i in range(5):
