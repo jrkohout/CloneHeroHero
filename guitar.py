@@ -6,14 +6,7 @@ from queue import SimpleQueue
 from pyKey import pressKey, releaseKey, press
 from threading import Thread
 
-STRUM_DELAY_MS = 10
-STRUM_DELAY_NS = STRUM_DELAY_MS * 1e6
-
-# in-game keybinds for green, red, yellow, blue, and orange, respectively
-NOTE_KEYS = np.array(['a', 's', 'j', 'k', 'l'])
-#                  |== G == R == Y == B == O ===========*==*==*==*==*=======-----=====|
-
-STRUM_KEY = 'DOWN'
+import settings
 
 
 class Guitar:
@@ -32,13 +25,13 @@ class Guitar:
             keep_looping, call_time, note_mask = self._strum_queue.get()
             if keep_looping:
                 # wait until the delay has passed
-                while time.perf_counter_ns() - call_time < STRUM_DELAY_NS:
+                while time.perf_counter_ns() - call_time < settings.STRUM_DELAY_NS:
                     pass
                 # strum the notes
-                notes = NOTE_KEYS[note_mask]
+                notes = settings.NOTE_KEYS[note_mask]
                 for note in notes:
                     pressKey(note)
-                press(STRUM_KEY)
+                press(settings.STRUM_KEY)
                 for note in notes:
                     releaseKey(note)
 

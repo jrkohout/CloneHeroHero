@@ -8,13 +8,7 @@ from colorcap import ColorCapture
 from guitar import Guitar
 from screenfeed import ScreenFeed
 
-MONITOR = 1  # 1 should be main monitor
-
-TARGET_FPS = 240
-MS_DELAY = 1000 // TARGET_FPS
-
-AREA_THRESH = 1500  # TODO - adjust
-NO_FRET_PROP = 0.85
+import settings
 
 
 def _get_bottom_y(mask):
@@ -23,7 +17,7 @@ def _get_bottom_y(mask):
     mask_copy = mask.copy()  # TODO - temporary for development
     bottom_y = 0
     for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] > AREA_THRESH:  # FIXME adjust area threshold
+        if stats[i, cv2.CC_STAT_AREA] > settings.AREA_THRESH:  # FIXME adjust area threshold
             # centroid: [x, y]
             if centroids[i][1] > bottom_y:
                 bottom_y = centroids[i][1]
@@ -34,7 +28,7 @@ def _get_bottom_y(mask):
 class Hero:
     def __init__(self, do_previews, load_sf_properties, load_cc_properties):
         with mss() as sct:
-            self._s_feed = ScreenFeed(sct, MONITOR, do_previews, load_sf_properties)
+            self._s_feed = ScreenFeed(sct, settings.MONITOR, do_previews, load_sf_properties)
         self._c_cap = ColorCapture(do_previews, load_cc_properties)
         self._old_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange
         self._guitar = Guitar()
@@ -44,7 +38,7 @@ class Hero:
         self._guitar.start_thread()
         while True:
             frame = self._s_feed.next_frame()
-            no_fret_idx = int(frame.shape[0] * NO_FRET_PROP)
+            no_fret_idx = int(frame.shape[0] * settings.NO_FRET_PROP)
             frame_no_fret = frame[:no_fret_idx, :]
             # todo - better integrate the cutting off of image
             col_width = frame_no_fret.shape[1] / 5  # keep as float
@@ -65,19 +59,28 @@ class Hero:
 
             if np.any(notes):
                 self._guitar.enqueue_strum(notes)
-                print("DEBUG: Some note has crossed (", notes, ")")  # todo emit signal
 
             self._old_bottom_y = new_bottom_y.copy()
 
             # todo TEMPORARY: DEVELOPMENT
+            cv2.imshow("feed", frame)
+            cv2.imshow("feed_no_fret", frame_no_fret)
             for i in range(5):
                 cv2.imshow("column_{}".format(i), cmasks[i])
                 cv2.resizeWindow("column_{}".format(i), 200, 800)
 
-            if cv2.waitKey(MS_DELAY) == ord('q'):
-                print("quit.")
-                cv2.destroyAllWindows()
-                break
+            k = cv2.waitKey(settings.MS_DELAY)
+            if k != -1:
+                if k == ord('q'):
+                    print("quit.")
+                    cv2.destroyAllWindows()
+                    break
+                elif k == ord('w'):
+                    settings.STRUM_DELAY_NS += 1e6
+                    print("Increased strum delay to", settings.STRUM_DELAY_NS / 1e6, "ms.")
+                elif k == ord('s'):
+                    settings.STRUM_DELAY_NS -= 1e6
+                    print("Decreased strum delay to", settings.STRUM_DELAY_NS / 1e6, "ms.")
         self._guitar.end_thread()
 
 

@@ -5,19 +5,17 @@ import cv2
 from mss.base import MSSBase
 import configparser
 
+import settings
 
-PROPERTIES_PATH = "properties.ini"
-MONITOR_PREVIEW_SHRINK_FACTOR = 2
-WIDTH_STRETCH = 0.75
-HEIGHT_STRETCH = 1.5
-WARPBOX_PREVIEW_FPS = 30
 
 fretboard_coords = list()
 
 
 def sbb_mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-        fretboard_coords.append((x * MONITOR_PREVIEW_SHRINK_FACTOR, y * MONITOR_PREVIEW_SHRINK_FACTOR))
+        fretboard_coords.append(
+            (x * settings.MONITOR_PREVIEW_SHRINK_FACTOR, y * settings.MONITOR_PREVIEW_SHRINK_FACTOR)
+        )
         print("Point set")
 
 
@@ -39,9 +37,9 @@ class ScreenFeed:
 
 
     def _load_properties(self):
-        with open(PROPERTIES_PATH) as file:
+        with open(settings.PROPERTIES_PATH) as file:
             config = configparser.ConfigParser()
-            config.read(PROPERTIES_PATH)
+            config.read(settings.PROPERTIES_PATH)
             # config[section][key]
             fb_corners = config["fretboard_corners"]
             tr = np.array([int(fb_corners["tr_x"]), int(fb_corners["tr_y"])])
@@ -63,14 +61,14 @@ class ScreenFeed:
             bb_s2s[key] = str(self._boundbox[key])
         config["bounding_box"] = bb_s2s
 
-        with open(PROPERTIES_PATH, 'w') as configfile:
+        with open(settings.PROPERTIES_PATH, 'w') as configfile:
             config.write(configfile)
 
     def _set_bounding_box(self):
         mon = self._mss.monitors[self._mon_num]
         screenshot = np.array(self._mss.grab(mon))
-        small_width = screenshot.shape[1] // MONITOR_PREVIEW_SHRINK_FACTOR
-        small_height = screenshot.shape[0] // MONITOR_PREVIEW_SHRINK_FACTOR
+        small_width = screenshot.shape[1] // settings.MONITOR_PREVIEW_SHRINK_FACTOR
+        small_height = screenshot.shape[0] // settings.MONITOR_PREVIEW_SHRINK_FACTOR
         small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
         cv2.imshow("screenshot", small_screenshot)
         cv2.setMouseCallback("screenshot", sbb_mouse_callback)
@@ -125,8 +123,8 @@ class ScreenFeed:
         return fretboard_corners
 
     def _set_warping(self, tr, tl, bl, br):
-        self._warp_width = self._boundbox["width"] * WIDTH_STRETCH
-        self._warp_height = self._boundbox["height"] * HEIGHT_STRETCH
+        self._warp_width = self._boundbox["width"] * settings.WIDTH_STRETCH
+        self._warp_height = self._boundbox["height"] * settings.HEIGHT_STRETCH
         scene_points = np.float32([
             [tr[0] - self._boundbox["left"], 0],
             [tl[0] - self._boundbox["left"], 0],
@@ -143,7 +141,7 @@ class ScreenFeed:
 
     def _show_preview(self):
         print("Showing preview. Press 'q' to continue.")
-        preview_ms_delay = 1000 // WARPBOX_PREVIEW_FPS
+        preview_ms_delay = 1000 // settings.WARPBOX_PREVIEW_FPS
         while cv2.waitKey(preview_ms_delay) != ord('q'):
             screenshot = np.array(self._mss.grab(self._boundbox))
             warped = cv2.warpPerspective(screenshot, self._M, dsize=(int(self._warp_width), int(self._warp_height)))
