@@ -37,13 +37,14 @@ def sbb_mouse_callback(event, x, y, flags, param):
         fretboard_coords.append(
             (int(x * settings.MONITOR_PREVIEW_SHRINK_FACTOR), int(y * settings.MONITOR_PREVIEW_SHRINK_FACTOR))
         )
-        print("Point set")
+        print("Point set - ({}, {})".format(x, y))
 
 
 class ScreenFeed:
     def __init__(self, mss: MSSBase, mon_num, show_preview, load_properties):
         self._mss = mss
         self._mon_num = mon_num
+        self._mon = self._mss.monitors[self._mon_num]
         print("Available Monitors:")
         for mon in self._mss.monitors:
             print(mon)
@@ -76,8 +77,7 @@ class ScreenFeed:
             config.write(configfile)
 
     def _set_capture_bounds(self):
-        mon = self._mss.monitors[self._mon_num]
-        screenshot = np.array(self._mss.grab(mon))
+        screenshot = np.array(self._mss.grab(self._mon))
         small_width = int(screenshot.shape[1] / settings.MONITOR_PREVIEW_SHRINK_FACTOR)
         small_height = int(screenshot.shape[0] / settings.MONITOR_PREVIEW_SHRINK_FACTOR)
         small_screenshot = cv2.resize(screenshot, dsize=(small_width, small_height))
@@ -106,7 +106,7 @@ class ScreenFeed:
         bl = np.array([np.min(fb_coords[:, 0]), max_y])
         br = np.array([np.max(fb_coords[:, 0]), max_y])
 
-        fretboard_corners = {
+        fretboard_corners = {  # in relation to the opencv window (in relation to top left corner of the given monitor)
             "tr_x": str(tr[0]),
             "tr_y": str(tr[1]),
             "tl_x": str(tl[0]),
@@ -117,37 +117,42 @@ class ScreenFeed:
             "br_y": str(br[1]),
         }
 
+        # these are again in relation to top left corner of the given monitor
         clipped_tr, clipped_tl, clipped_bl, clipped_br = calculate_clipped_corners(tr, tl, bl, br)
         self._set_boundbox(clipped_tr, clipped_tl, clipped_bl, clipped_br)
         self._set_warping(clipped_tr, clipped_tl, clipped_bl, clipped_br)
         return fretboard_corners
 
     def _set_boundbox(self, tr, tl, bl, br):
-        bb_left = bl[0]
-        bb_top = min(tl[1], tr[1])
-        bb_width = br[0] - bb_left
-        bb_height = max(bl[1], br[1]) - bb_top
+        bb_left = self._mon["left"] + bl[0]
+        bb_top = self._mon["top"] + min(tl[1], tr[1])
+        bb_width = br[0] - bl[0]
+        bb_height = max(bl[1], br[1]) - min(tl[1], tr[1])
         self._boundbox = {
             "left": int(bb_left),
             "top": int(bb_top),
             "width": int(bb_width),
-            "height": int(bb_height)
+            "height": int(bb_height),
+            "mon": self._mon_num
         }
 
     def _set_warping(self, tr, tl, bl, br):
         self._warp_width = self._boundbox["width"] * settings.WIDTH_STRETCH
         self._warp_height = self._boundbox["height"] * settings.HEIGHT_STRETCH
+
+        bb_left_translated = abs(self._mon["left"] - self._boundbox["left"])
+
         scene_points = np.float32([
-            [tr[0] - self._boundbox["left"], 0],
-            [tl[0] - self._boundbox["left"], 0],
-            [0, bl[1] - self._boundbox["top"]],
-            [br[0] - self._boundbox["left"], bl[1] - self._boundbox["top"]]
+            [tr[0] - bb_left_translated, 0],
+            [tl[0] - bb_left_translated, 0],
+            [0, self._boundbox["height"]],
+            [self._boundbox["width"], self._boundbox["height"]]
         ])
         target_points = np.float32([
-            [int(self._warp_width - 1), 0],
+            [int(self._warp_width), 0],
             [0, 0],
-            [0, int(self._warp_height - 1)],
-            [int(self._warp_width - 1), int(self._warp_height - 1)]
+            [0, int(self._warp_height)],
+            [int(self._warp_width), int(self._warp_height)]
         ])
         self._M = cv2.getPerspectiveTransform(scene_points, target_points)
 
@@ -161,7 +166,17 @@ class ScreenFeed:
             cv2.imshow("warped", warped)
         cv2.destroyAllWindows()
 
-    def next_frame(self):
-        bb_screenshot = np.array(self._mss.grab(self._boundbox))
-        warped = cv2.warpPerspective(bb_screenshot, self._M, dsize=(int(self._warp_width), int(self._warp_height)))
-        return warped
+    def put_next_frame(self, dest_arr):
+        cv2.warpPerspective(
+            cv2.cvtColor(  # convert to hsv
+                np.array(self._mss.grab(self._boundbox), dtype=np.uint8),  # need to use float32 for OpenCV
+                cv2.COLOR_BGR2HSV
+            ),
+            self._M,
+            dsize=(int(self._warp_width), int(self._warp_height)),
+            dst=dest_arr
+        )
+
+    @property
+    def frame_shape(self):
+        return self._warp_height, self._warp_width, 3  # height x width x channels (HSV)

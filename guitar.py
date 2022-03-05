@@ -25,7 +25,7 @@ class Guitar:
             keep_looping, call_time, note_mask = self._strum_queue.get()
             if keep_looping:
                 # wait until the delay has passed
-                while time.perf_counter_ns() - call_time < settings.STRUM_DELAY_NS:
+                while time.perf_counter_ns() - call_time < settings.STRUM_DELAY_NS:  # TODO - I think this busy-wait is killing the performance
                     pass
                 # strum the notes
                 notes = settings.NOTE_KEYS[note_mask]

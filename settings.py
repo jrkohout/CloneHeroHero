@@ -3,6 +3,7 @@
 import numpy
 
 DEV_MODE = False
+SHOW_FEED = True
 
 ### Main Stuff
 MONITOR = 1  # 1 should be main monitor
@@ -10,8 +11,8 @@ MONITOR = 1  # 1 should be main monitor
 TARGET_FPS = 240
 MS_DELAY = 1000 // TARGET_FPS
 
-AREA_THRESH = 1500  # TODO - adjust
-NOTE_TAIL_WIDTH_THRESH = 50
+AREA_THRESH = 2000  # TODO - adjust
+NOTE_TAIL_WIDTH_THRESH = 80
 
 BOTTOM_SNIP_PROPORTION = 0.5
 TOP_SNIP_PROPORTION = 0.3

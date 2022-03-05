@@ -11,26 +11,21 @@ from screenfeed import ScreenFeed
 import settings
 
 
-def _get_bottom_y(mask):
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
-
-    if settings.DEV_MODE:
-        mask_copy = mask.copy()  # TODO - temporary for development
-    bottom_y = 0
-    for i in range(1, num_labels):
-        # consider centroid if the area of the blob is great enough, but ignore if the width is too small
-        # (too small width => note tail)
-        if stats[i, cv2.CC_STAT_AREA] > settings.AREA_THRESH and \
-                stats[i, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
-            # centroid: [x, y]
-            if centroids[i][1] > bottom_y:
-                bottom_y = centroids[i][1]
-            if settings.DEV_MODE:
-                cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 20, [180, 180, 180], thickness=5)
-    if settings.DEV_MODE:
-        return bottom_y, mask_copy
-    else:
-        return bottom_y
+def _get_bottom_y(mask_columns, new_bottom_y):  # TODO - try doing connectedcomponents on the whole frame rather than column by column?
+    for i, mask_col in enumerate(mask_columns):
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)
+        col_bottom_y = 0
+        for j in range(1, num_labels):
+            # consider centroid if the area of the blob is great enough, but ignore if the width is too small
+            # (too small width => note tail)
+            if stats[j, cv2.CC_STAT_AREA] > settings.AREA_THRESH and \
+                    stats[j, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
+                # centroid: [x, y]
+                if centroids[j][1] > col_bottom_y:
+                    col_bottom_y = centroids[j][1]
+                if settings.SHOW_FEED and settings.DEV_MODE:
+                    cv2.circle(mask_col, np.round(centroids[j]).astype(int), 10, [124, 124, 124], thickness=10)
+        new_bottom_y[i] = col_bottom_y
 
 
 class Hero:
@@ -39,43 +34,35 @@ class Hero:
             self._s_feed = ScreenFeed(sct, settings.MONITOR, do_previews, load_sf_properties)
         self._c_cap = ColorCapture(do_previews, load_cc_properties)
         self._old_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange
+        new_bottom_y = np.zeros(5)
         self._guitar = Guitar()
 
     def play_loop(self):
         new_bottom_y = np.zeros(5)
         self._guitar.start_thread()
+        frame = np.empty(self._s_feed.frame_shape, dtype=np.uint8)
+        frame_columns = np.array_split(frame, 5, axis=1)  # produces evenly spaced column views into frame
+        mask = np.empty(self._s_feed.frame_shape[:2], dtype=np.uint8)
+        mask_columns = np.array_split(mask, 5, axis=1)  # produces evenly spaced column views into mask
+
         while True:
-            frame = self._s_feed.next_frame()
-            col_width = frame.shape[1] / 5  # keep as float
-
+            self._s_feed.put_next_frame(frame)
             # divide board into 5 columns (green, red, yellow, blue, orange)
-            # todo try to vectorize this, maybe keeping cols as a numpy array or indices of one
-            cols = list()
-            for i in range(5):
-                cols.append(frame[:, int(i * col_width):int((i + 1) * col_width), :])
 
-            if settings.DEV_MODE:
-                cmasks = list()  # just using this to display masks for development
-            for i in range(5):
-                mask = self._c_cap.mask(cols[i], i)
-                if settings.DEV_MODE:
-                    new_bottom_y[i], circled_mask = _get_bottom_y(mask)
-                    cmasks.append(circled_mask)
-                else:
-                    new_bottom_y[i] = _get_bottom_y(mask)
+            for i in range(len(frame_columns)):
+                self._c_cap.mask(frame_columns[i], i, mask_columns[i])
+
+            _get_bottom_y(mask_columns, new_bottom_y)
 
             notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
 
             if np.any(notes):
                 self._guitar.enqueue_strum(notes)
 
-            self._old_bottom_y = new_bottom_y.copy()
+            np.copyto(self._old_bottom_y, new_bottom_y)
 
-            cv2.imshow("feed", frame)
-            if settings.DEV_MODE:
-                for i in range(5):
-                    cv2.imshow("column_{}".format(i), cmasks[i])
-                    cv2.resizeWindow("column_{}".format(i), 200, frame.shape[0])
+            if settings.SHOW_FEED:
+                cv2.imshow("mask_feed", mask)
 
             k = cv2.waitKey(settings.MS_DELAY)
             if k != -1:
