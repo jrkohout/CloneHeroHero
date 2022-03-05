@@ -14,15 +14,23 @@ import settings
 def _get_bottom_y(mask):
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
 
-    mask_copy = mask.copy()  # TODO - temporary for development
+    if settings.DEV_MODE:
+        mask_copy = mask.copy()  # TODO - temporary for development
     bottom_y = 0
     for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] > settings.AREA_THRESH:  # FIXME adjust area threshold
+        # consider centroid if the area of the blob is great enough, but ignore if the width is too small
+        # (too small width => note tail)
+        if stats[i, cv2.CC_STAT_AREA] > settings.AREA_THRESH and \
+                stats[i, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
             # centroid: [x, y]
             if centroids[i][1] > bottom_y:
                 bottom_y = centroids[i][1]
-            cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 35, [180, 180, 180], thickness=7)
-    return bottom_y, mask_copy
+            if settings.DEV_MODE:
+                cv2.circle(mask_copy, np.round(centroids[i]).astype(int), 20, [180, 180, 180], thickness=5)
+    if settings.DEV_MODE:
+        return bottom_y, mask_copy
+    else:
+        return bottom_y
 
 
 class Hero:
@@ -44,13 +52,17 @@ class Hero:
             # todo try to vectorize this, maybe keeping cols as a numpy array or indices of one
             cols = list()
             for i in range(5):
-                cols.append(frame[:, int(i * col_width):int((i+1) * col_width), :])
+                cols.append(frame[:, int(i * col_width):int((i + 1) * col_width), :])
 
-            cmasks = list()  # todo probably don't want to store these, just using this to display masks for development
+            if settings.DEV_MODE:
+                cmasks = list()  # just using this to display masks for development
             for i in range(5):
                 mask = self._c_cap.mask(cols[i], i)
-                new_bottom_y[i], circled_mask = _get_bottom_y(mask)
-                cmasks.append(circled_mask)
+                if settings.DEV_MODE:
+                    new_bottom_y[i], circled_mask = _get_bottom_y(mask)
+                    cmasks.append(circled_mask)
+                else:
+                    new_bottom_y[i] = _get_bottom_y(mask)
 
             notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
 
@@ -59,11 +71,11 @@ class Hero:
 
             self._old_bottom_y = new_bottom_y.copy()
 
-            # todo TEMPORARY: DEVELOPMENT
             cv2.imshow("feed", frame)
-            for i in range(5):
-                cv2.imshow("column_{}".format(i), cmasks[i])
-                cv2.resizeWindow("column_{}".format(i), 200, frame.shape[0])
+            if settings.DEV_MODE:
+                for i in range(5):
+                    cv2.imshow("column_{}".format(i), cmasks[i])
+                    cv2.resizeWindow("column_{}".format(i), 200, frame.shape[0])
 
             k = cv2.waitKey(settings.MS_DELAY)
             if k != -1:
