@@ -11,7 +11,8 @@ from screenfeed import ScreenFeed
 import settings
 
 
-def _get_bottom_y(mask_columns, new_bottom_y):  # TODO - try doing connectedcomponents on the whole frame rather than column by column?
+# TODO - try doing connectedcomponents on the whole frame rather than column by column?
+def _get_bottom_y(mask_columns, new_bottom_y):
     for i, mask_col in enumerate(mask_columns):
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)
         col_bottom_y = 0
@@ -34,16 +35,14 @@ class Hero:
             self._s_feed = ScreenFeed(sct, settings.MONITOR, do_previews, load_sf_properties)
         self._c_cap = ColorCapture(do_previews, load_cc_properties)
         self._old_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange
-        new_bottom_y = np.zeros(5)
         self._guitar = Guitar()
 
     def play_loop(self):
-        new_bottom_y = np.zeros(5)
-        self._guitar.start_thread()
         frame = np.empty(self._s_feed.frame_shape, dtype=np.uint8)
         frame_columns = np.array_split(frame, 5, axis=1)  # produces evenly spaced column views into frame
         mask = np.empty(self._s_feed.frame_shape[:2], dtype=np.uint8)
         mask_columns = np.array_split(mask, 5, axis=1)  # produces evenly spaced column views into mask
+        new_bottom_y = np.zeros(5)
 
         while True:
             self._s_feed.put_next_frame(frame)
@@ -58,6 +57,8 @@ class Hero:
 
             if np.any(notes):
                 self._guitar.enqueue_strum(notes)
+
+            self._guitar.check_strum()
 
             np.copyto(self._old_bottom_y, new_bottom_y)
 
@@ -76,7 +77,6 @@ class Hero:
                 elif k == ord('s'):
                     settings.STRUM_DELAY_NS -= 1e6
                     print("Decreased strum delay to", settings.STRUM_DELAY_NS / 1e6, "ms.")
-        self._guitar.end_thread()
 
 
 # returns true if yes, false if no
