@@ -168,7 +168,7 @@ class ScreenFeed:
 
     def put_next_frame(self, dest_arr):
         cv2.warpPerspective(
-            cv2.cvtColor(  # convert to hsv
+            cv2.cvtColor(  # convert to hsv TODO - try using RGB in project post-setup to prevent need for conversion
                 np.array(self._mss.grab(self._boundbox), dtype=np.uint8),  # need to use float32 for OpenCV
                 cv2.COLOR_BGR2HSV
             ),

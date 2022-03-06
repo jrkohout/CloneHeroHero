@@ -72,7 +72,7 @@ class ColorCapture:
         hues = hsv_colors[:, 0].reshape(-1, 1).astype(np.int16)
         low_hues = np.max(np.hstack([hues - settings.HUE_RADIUS, z]), axis=1).reshape(-1, 1).astype(np.uint8)
         high_hues = np.min(np.hstack([hues + settings.HUE_RADIUS, a]), axis=1).reshape(-1, 1).astype(np.uint8)
-        h = 100 * np.ones((5, 2), dtype=np.uint8)
+        h = 100 * np.ones((5, 2), dtype=np.uint8)  # TODO - explore better thresholding
         t = 255 * np.ones((5, 2), dtype=np.uint8)
         self._hsv_lowers = np.hstack([low_hues, h])
         self._hsv_uppers = np.hstack([high_hues, t])

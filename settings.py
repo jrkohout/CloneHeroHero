@@ -2,22 +2,22 @@
 
 import numpy
 
-DEV_MODE = False
-SHOW_FEED = True
+SHOW_FEED = True  # show mask feed
+DEV_MODE = True  # draw circles on mask feed
 
 ### Main Stuff
 MONITOR = 1  # 1 should be main monitor
 
-TARGET_FPS = 240
+TARGET_FPS = 240  # should probably just max this out
 MS_DELAY = 1000 // TARGET_FPS
 
-AREA_THRESH = 2000  # TODO - adjust
-NOTE_TAIL_WIDTH_THRESH = 80
+AREA_THRESH = 1000  # TODO - adjust
+NOTE_TAIL_WIDTH_THRESH = 70
 
 BOTTOM_SNIP_PROPORTION = 0.5
 TOP_SNIP_PROPORTION = 0.3
 
-STRUM_DELAY_MS = 135
+STRUM_DELAY_MS = 137
 STRUM_DELAY_NS = STRUM_DELAY_MS * 1e6
 
 ### Keybinds
