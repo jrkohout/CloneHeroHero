@@ -45,25 +45,34 @@ class Hero:
         new_bottom_y = np.zeros(5)
 
         while True:
+            # TODO - adding all those checks seems to work pretty good actually, should try to better incorporate that and add more
             self._s_feed.put_next_frame(frame)
             # divide board into 5 columns (green, red, yellow, blue, orange)
+
+            self._guitar.check_strum()  # FIXME check strum
 
             for i in range(len(frame_columns)):
                 self._c_cap.mask(frame_columns[i], i, mask_columns[i])
 
+            self._guitar.check_strum()  # FIXME check strums
+
             _get_bottom_y(mask_columns, new_bottom_y)
+
+            self._guitar.check_strum()  # FIXME check strum
 
             notes = self._old_bottom_y > new_bottom_y  # true values mean play the note, false values mean don't play it
 
             if np.any(notes):
                 self._guitar.enqueue_strum(notes)
 
-            self._guitar.check_strum()
+            self._guitar.check_strum()  # FIXME check strum
 
             np.copyto(self._old_bottom_y, new_bottom_y)
 
             if settings.SHOW_FEED:
                 cv2.imshow("mask_feed", mask)
+
+            self._guitar.check_strum()  # FIXME check strum
 
             k = cv2.waitKey(settings.MS_DELAY)
             if k != -1:
