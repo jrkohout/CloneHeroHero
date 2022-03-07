@@ -5,7 +5,7 @@ import cv2
 from mss import mss
 
 from colorcap import ColorCapture
-from guitar import Guitar
+from guitar import Guitar, release_all
 from screenfeed import ScreenFeed
 
 import settings
@@ -21,7 +21,6 @@ class Hero:
 
     # TODO - try doing connectedcomponents on the whole frame rather than column by column?
     # TODO - I wonder if I can use some logic to better detect multi-note strums, the bot sometimes struggles with those
-    # TODO - try implementing support for holding notes with tails
     def _get_bottom_y(self, mask_columns, new_bottom_y):
         for i, mask_col in enumerate(mask_columns):
             num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)
@@ -29,13 +28,18 @@ class Hero:
             for j in range(1, num_labels):
                 # consider centroid if the area of the blob is great enough, but ignore if the width is too small
                 # (too small width => note tail)
-                if stats[j, cv2.CC_STAT_AREA] > settings.AREA_THRESH and \
-                        stats[j, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
-                    # centroid: [x, y]
-                    if centroids[j][1] > col_bottom_y:
-                        col_bottom_y = centroids[j][1]
-                    if settings.SHOW_FEED and settings.DEV_MODE:
-                        cv2.circle(mask_col, np.round(centroids[j]).astype(int), 10, [124, 124, 124], thickness=10)
+                if stats[j, cv2.CC_STAT_AREA] > settings.AREA_THRESH:
+                    if stats[j, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
+                        # likely a note
+                        # centroid: [x, y]
+                        if centroids[j][1] > col_bottom_y:
+                            col_bottom_y = centroids[j][1]
+                        if settings.SHOW_FEED and settings.DEV_MODE:
+                            cv2.circle(mask_col, np.round(centroids[j]).astype(int), 10, [124, 124, 124], thickness=10)
+                    # else: TODO - figure out better way of dealing with tails here
+                        # likely a tail
+                        # do something with col_bottom_tail_y
+                        # pass
             new_bottom_y[i] = col_bottom_y
 
             self._guitar.check_strum()  # FIXME check strum
@@ -103,13 +107,16 @@ def prompt_yn(prompt):
 
 
 def main():
-    # TODO - make better prompts, better integrate setup
-    do_previews = not prompt_yn("Skip previews of screen feed and color capture? (y/n) ")
-    load_sfp = prompt_yn("Load screen feed properties from file? (y/n) ")
-    load_ccp = prompt_yn("Load color capture properties from file? (y/n) ")
+    try:
+        # TODO - make better prompts, better integrate setup
+        do_previews = not prompt_yn("Skip previews of screen feed and color capture? (y/n) ")
+        load_sfp = prompt_yn("Load screen feed properties from file? (y/n) ")
+        load_ccp = prompt_yn("Load color capture properties from file? (y/n) ")
 
-    hero = Hero(do_previews, load_sfp, load_ccp)
-    hero.play_loop()
+        hero = Hero(do_previews, load_sfp, load_ccp)
+        hero.play_loop()
+    finally:
+        release_all()
 
 
 if __name__ == "__main__":
