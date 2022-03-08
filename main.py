@@ -16,7 +16,7 @@ class Hero:
         with mss() as sct:
             self._s_feed = ScreenFeed(sct, settings.MONITOR, do_previews, load_sf_properties)
         self._c_cap = ColorCapture(do_previews, load_cc_properties)
-        self._old_note_bottom_y = np.zeros(5)  # green, red, yellow, blue, orange TODO - change to int if ...
+        self._old_note_bottom_y = np.zeros(5, dtype=int)  # green, red, yellow, blue, orange
         self._old_bottom_tail_top_y = np.zeros(5, dtype=int)
         self._old_bottom_tail_bottom_y = np.zeros(5, dtype=int)
         self._guitar = Guitar()
@@ -33,19 +33,22 @@ class Hero:
                 # consider centroid if the area of the blob is great enough, but ignore if the width is too small
                 # (too small width => note tail)
                 if stats[j, cv2.CC_STAT_AREA] > settings.AREA_THRESH:
+                    bounding_box_bottom = stats[j, cv2.CC_STAT_TOP] + stats[j, cv2.CC_STAT_HEIGHT]
                     if stats[j, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
                         # likely a note
                         # centroid: [x, y]
-                        if centroids[j][1] > col_note_bottom_y:  # TODO - use more precise stat like bounding box bottom?
-                            col_note_bottom_y = centroids[j][1]
+                        if bounding_box_bottom > col_note_bottom_y:
+                            col_note_bottom_y = bounding_box_bottom
                     else:
                         # likely a tail
                         if stats[j, cv2.CC_STAT_TOP] > col_bottom_tail_top_y:
+                            # FIXME - make sure its the bottom tail somehow
                             col_bottom_tail_top_y = stats[j, cv2.CC_STAT_TOP]
-                        if stats[j, cv2.CC_STAT_TOP] + stats[j, cv2.CC_STAT_HEIGHT] > col_bottom_tail_bottom_y:
-                            col_bottom_tail_bottom_y = stats[j, cv2.CC_STAT_TOP] + stats[j, cv2.CC_STAT_HEIGHT]
+                        if bounding_box_bottom > col_bottom_tail_bottom_y:
+                            # FIXME - make sure its the bottom tail somehow
+                            col_bottom_tail_bottom_y = bounding_box_bottom
                     if settings.SHOW_FEED and settings.DEV_MODE:
-                        cv2.circle(mask_col, np.round(centroids[j]).astype(int), 20, [124, 124, 124], thickness=8)
+                        cv2.line(mask_col, (0, bounding_box_bottom), (mask_col.shape[1] - 1, bounding_box_bottom), (125, 125, 125), thickness=3)
 
             new_note_bottom_y[i] = col_note_bottom_y
             new_bottom_tail_top_y[i] = col_bottom_tail_top_y
@@ -58,22 +61,24 @@ class Hero:
         frame_columns = np.array_split(frame, 5, axis=1)  # produces evenly spaced column views into frame
         mask = np.empty(self._s_feed.frame_shape[:2], dtype=np.uint8)
         mask_columns = np.array_split(mask, 5, axis=1)  # produces evenly spaced column views into mask
-        new_note_bottom_y = np.zeros(5)  # todo change to int type if using bottom of bounding box rather than centroid
+        new_note_bottom_y = np.zeros(5, dtype=int)
         new_bottom_tail_top_y = np.zeros(5, dtype=int)
         new_bottom_tail_bottom_y = np.zeros(5, dtype=int)
         tail_gap_cutoff = frame.shape[0] - settings.NOTE_TAIL_GAP
 
+        cv2.namedWindow("mask_feed")
+        cv2.setWindowProperty("mask_feed", cv2.WND_PROP_TOPMOST, 1)
+
         while True:
-            # TODO - adding all those checks (the FIXME check action checks) seems to work really well on a good PC, should try to better incorporate them
+            # TODO - better incorporate the FIXME check action checks
             self._s_feed.put_next_frame(frame)
             # divide board into 5 columns (green, red, yellow, blue, orange)
 
             self._guitar.check_actions()  # FIXME check action
 
-            for i in range(len(frame_columns)):  # TODO - could maybe hard code each different column here rather than a for loop
-                # TODO - once in a while, it appears that some notes are not picked up by segmentation or are split into
-                #  two small parts that are ignored for being too small - further investigation required (record video
-                #  of both bot view and game view and see what the errors look like)
+            for i in range(len(frame_columns)):
+                # TODO - some notes tails are not picked up by segmentation, some notes are split into small parts that
+                #  are ignored by algorithm, some notes are smaller than the threshold while others in same line are bigger than threshold
                 self._c_cap.mask(frame_columns[i], i, mask_columns[i])
                 self._guitar.check_actions()  # FIXME check actions
 

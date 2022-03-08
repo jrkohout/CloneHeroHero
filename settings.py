@@ -22,7 +22,7 @@ NOTE_TAIL_GAP = 75
 ### Guitar Stuff
 NOTE_QUEUE_SIZE = 100
 
-STRUM_DELAY_MS = 135  # TODO rename
+STRUM_DELAY_MS = 140  # TODO rename
 STRUM_DELAY_NS = STRUM_DELAY_MS * 1e6
 
 ### Keybinds
