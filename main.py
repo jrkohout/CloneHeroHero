@@ -26,36 +26,39 @@ class Hero:
     def _get_note_positions(self, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y):
         for i, mask_col in enumerate(mask_columns):
             num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)  # todo - maybe don't need centroid calculations, look for simpler method
-            col_note_bottom_y = 0
-            col_bottom_tail_top_y = 0
-            col_bottom_tail_bottom_y = 0
-            for j in range(1, num_labels):
-                # consider centroid if the area of the blob is great enough, but ignore if the width is too small
-                # (too small width => note tail)
-                if stats[j, cv2.CC_STAT_AREA] > settings.AREA_THRESH:
-                    bounding_box_bottom = stats[j, cv2.CC_STAT_TOP] + stats[j, cv2.CC_STAT_HEIGHT]
-                    if stats[j, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH:
-                        # likely a note
-                        # centroid: [x, y]
-                        if bounding_box_bottom > col_note_bottom_y:
-                            col_note_bottom_y = bounding_box_bottom
-                    else:
-                        # likely a tail
-                        if stats[j, cv2.CC_STAT_TOP] > col_bottom_tail_top_y:
-                            # FIXME - make sure its the bottom tail somehow
-                            col_bottom_tail_top_y = stats[j, cv2.CC_STAT_TOP]
-                        if bounding_box_bottom > col_bottom_tail_bottom_y:
-                            # FIXME - make sure its the bottom tail somehow
-                            col_bottom_tail_bottom_y = bounding_box_bottom
-                    if settings.SHOW_FEED and settings.DEV_MODE:
-                        cv2.line(mask_col, (0, bounding_box_bottom), (mask_col.shape[1] - 1, bounding_box_bottom), (125, 125, 125), thickness=3)
 
-            new_note_bottom_y[i] = col_note_bottom_y
-            new_bottom_tail_top_y[i] = col_bottom_tail_top_y
-            new_bottom_tail_bottom_y[i] = col_bottom_tail_bottom_y
+            relevant_stats = stats[1:][stats[1:, cv2.CC_STAT_AREA] > settings.AREA_THRESH]
+            note_idx = relevant_stats[:, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH
+
+            note_stats = relevant_stats[note_idx]
+            tail_stats = relevant_stats[~note_idx]
+
+            new_note_bottom_y[i] = np.max(note_stats[:, cv2.CC_STAT_TOP]) if note_stats.shape[0] > 0 else 0
+            new_bottom_tail_top_y[i] = np.max(tail_stats[:, cv2.CC_STAT_TOP]) if tail_stats.shape[0] > 0 else 0
+            new_bottom_tail_bottom_y[i] = np.max(tail_stats[:, cv2.CC_STAT_TOP] + tail_stats[:, cv2.CC_STAT_HEIGHT]) if tail_stats.shape[0] > 0 else 0
+
+            if settings.SHOW_FEED and settings.DEV_MODE:
+                if new_note_bottom_y[i] != 0:
+                    cv2.line(mask_col, (0, new_note_bottom_y[i]), (mask_col.shape[1] - 1, new_note_bottom_y[i]), (125, 125, 125), thickness=3)
+                if new_bottom_tail_top_y[i] != 0:
+                    cv2.line(mask_col, (0, new_bottom_tail_top_y[i]), (mask_col.shape[1] - 1, new_bottom_tail_top_y[i]), (125, 125, 125), thickness=3)
+                if new_bottom_tail_bottom_y[i] != 0:
+                    cv2.line(mask_col, (0, new_bottom_tail_bottom_y[i]), (mask_col.shape[1] - 1, new_bottom_tail_bottom_y[i]), (125, 125, 125), thickness=3)
 
             self._guitar.check_actions()  # FIXME check action
 
+    def _put_next_notes(self, frame, frame_columns, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y):
+        self._s_feed.put_next_frame(frame)  # TODO - optimize - have frame be a minimum size (scale down)
+        self._guitar.check_actions()  # FIXME check action
+        for i in range(len(frame_columns)):
+            self._c_cap.mask(frame_columns[i], i, mask_columns[i])
+            self._guitar.check_actions()  # FIXME check actions
+        self._get_note_positions(mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
+
+    # TODO - some notes tails are not picked up by segmentation, some notes are split into small parts that
+    #  are ignored by algorithm, some notes are smaller than the threshold while others in same line are bigger than threshold
+    # TODO - try implementing support for open strums (pick purple color and segment the whole frame, or a
+    #  narrow band of the frame since it's pretty skinny)
     def play_loop(self):
         frame = np.empty(self._s_feed.frame_shape, dtype=np.uint8)
         frame_columns = np.array_split(frame, 5, axis=1)  # produces evenly spaced column views into frame
@@ -71,27 +74,15 @@ class Hero:
 
         while True:
             # TODO - better incorporate the FIXME check action checks
-            self._s_feed.put_next_frame(frame)
-            # divide board into 5 columns (green, red, yellow, blue, orange)
+            self._put_next_notes(frame, frame_columns, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
 
-            self._guitar.check_actions()  # FIXME check action
+            # true values mean play the note, false values mean don't play it
+            hold = self._old_note_bottom_y > new_note_bottom_y
+            if np.any(hold):  # TODO - this is a little dirty; try to generalize to a specified number of frames (probably not necessary)
+                self._put_next_notes(frame, frame_columns, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
+                self._guitar.add_hold(hold | (self._old_note_bottom_y > new_note_bottom_y))
 
-            for i in range(len(frame_columns)):
-                # TODO - some notes tails are not picked up by segmentation, some notes are split into small parts that
-                #  are ignored by algorithm, some notes are smaller than the threshold while others in same line are bigger than threshold
-                self._c_cap.mask(frame_columns[i], i, mask_columns[i])
-                self._guitar.check_actions()  # FIXME check actions
-
-            # TODO - try implementing support for open strums (pick purple color and segment the whole frame, or a
-            #  narrow band of the frame since it's pretty skinny)
-
-            self._get_note_positions(mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
-
-            hold = self._old_note_bottom_y > new_note_bottom_y  # true values mean play the note, false values mean don't play it
             release = (new_bottom_tail_bottom_y < tail_gap_cutoff) | (self._old_bottom_tail_top_y > new_bottom_tail_top_y)
-
-            if np.any(hold):
-                self._guitar.add_hold(hold)
             if np.any(release):
                 self._guitar.add_release(release)
 
@@ -106,7 +97,7 @@ class Hero:
 
             self._guitar.check_actions()  # FIXME check action
 
-            k = cv2.waitKey(settings.MS_DELAY)  # TODO - might be able to do 0 or 1 ms delay to speed up?
+            k = cv2.waitKey(settings.MS_DELAY)  # TODO - remove waiting completely to speed up
             if k != -1:
                 if k == ord('q'):
                     print("quit.")

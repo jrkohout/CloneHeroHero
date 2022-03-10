@@ -1,8 +1,9 @@
 # settings.py - centralized location of all global variables of the project
+# TODO - try to change all thresholds to be relative to size of frame
 
 import numpy
 
-SHOW_FEED = True  # show mask feed
+SHOW_FEED = False  # show mask feed
 DEV_MODE = True  # draw circles on mask feed
 
 ### Main Stuff
@@ -11,8 +12,8 @@ MONITOR = 1  # 1 should be main monitor
 TARGET_FPS = 240  # should probably just max this out
 MS_DELAY = 1000 // TARGET_FPS
 
-AREA_THRESH = 1000  # TODO - adjust
-NOTE_TAIL_WIDTH_THRESH = 70
+AREA_THRESH = 750  # TODO - adjust
+NOTE_TAIL_WIDTH_THRESH = 75
 
 BOTTOM_SNIP_PROPORTION = 0.5
 TOP_SNIP_PROPORTION = 0.3
@@ -22,7 +23,7 @@ NOTE_TAIL_GAP = 75
 ### Guitar Stuff
 NOTE_QUEUE_SIZE = 100
 
-STRUM_DELAY_MS = 140  # TODO rename
+STRUM_DELAY_MS = 125  # TODO rename
 STRUM_DELAY_NS = STRUM_DELAY_MS * 1e6
 
 ### Keybinds
