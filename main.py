@@ -47,14 +47,6 @@ class Hero:
 
             self._guitar.check_actions()  # FIXME check action
 
-    def _put_next_notes(self, frame, frame_columns, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y):
-        self._s_feed.put_next_frame(frame)  # TODO - optimize - have frame be a minimum size (scale down)
-        self._guitar.check_actions()  # FIXME check action
-        for i in range(len(frame_columns)):
-            self._c_cap.mask(frame_columns[i], i, mask_columns[i])
-            self._guitar.check_actions()  # FIXME check actions
-        self._get_note_positions(mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
-
     # TODO - some notes tails are not picked up by segmentation, some notes are split into small parts that
     #  are ignored by algorithm, some notes are smaller than the threshold while others in same line are bigger than threshold
     # TODO - try implementing support for open strums (pick purple color and segment the whole frame, or a
@@ -67,24 +59,36 @@ class Hero:
         new_note_bottom_y = np.zeros(5, dtype=int)
         new_bottom_tail_top_y = np.zeros(5, dtype=int)
         new_bottom_tail_bottom_y = np.zeros(5, dtype=int)
+
         tail_gap_cutoff = frame.shape[0] - settings.NOTE_TAIL_GAP
+        group_note_thresh = frame.shape[0] - settings.NOTE_GROUP_HEIGHT
 
         cv2.namedWindow("mask_feed")
         cv2.setWindowProperty("mask_feed", cv2.WND_PROP_TOPMOST, 1)
 
         while True:
             # TODO - better incorporate the FIXME check action checks
-            self._put_next_notes(frame, frame_columns, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
+            self._s_feed.put_next_frame(frame)  # TODO - optimize - have frame be a minimum size (scale down)
+
+            self._guitar.check_actions()  # FIXME check action
+
+            for i in range(5):
+                self._c_cap.mask(frame_columns[i], i, mask_columns[i])
+
+                self._guitar.check_actions()  # FIXME check actions
+
+            self._get_note_positions(mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
 
             # true values mean play the note, false values mean don't play it
-            hold = self._old_note_bottom_y > new_note_bottom_y
-            if np.any(hold):  # TODO - this is a little dirty; try to generalize to a specified number of frames (probably not necessary)
-                self._put_next_notes(frame, frame_columns, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y)
-                self._guitar.add_hold(hold | (self._old_note_bottom_y > new_note_bottom_y))
+            hold_notes = self._old_note_bottom_y > new_note_bottom_y
+            if np.any(hold_notes):
+                other_group_hold_notes = new_note_bottom_y > group_note_thresh
+                self._guitar.add_hold(hold_notes | other_group_hold_notes)
+                new_note_bottom_y[other_group_hold_notes] = 0
 
-            release = (new_bottom_tail_bottom_y < tail_gap_cutoff) | (self._old_bottom_tail_top_y > new_bottom_tail_top_y)
-            if np.any(release):
-                self._guitar.add_release(release)
+            release_notes = (new_bottom_tail_bottom_y < tail_gap_cutoff) | (self._old_bottom_tail_top_y > new_bottom_tail_top_y)
+            if np.any(release_notes):
+                self._guitar.add_release(release_notes)
 
             self._guitar.check_actions()  # FIXME check action
 
@@ -92,6 +96,7 @@ class Hero:
             np.copyto(self._old_bottom_tail_top_y, new_bottom_tail_top_y)
             np.copyto(self._old_bottom_tail_bottom_y, new_bottom_tail_bottom_y)
 
+            cv2.line(mask, (0, group_note_thresh), (mask.shape[1] - 1, group_note_thresh), (125, 125, 125), thickness=1)
             if settings.SHOW_FEED:
                 cv2.imshow("mask_feed", mask)
 

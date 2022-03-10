@@ -3,7 +3,7 @@
 
 import numpy
 
-SHOW_FEED = False  # show mask feed
+SHOW_FEED = True  # show mask feed
 DEV_MODE = True  # draw circles on mask feed
 
 ### Main Stuff
@@ -19,6 +19,7 @@ BOTTOM_SNIP_PROPORTION = 0.5
 TOP_SNIP_PROPORTION = 0.3
 
 NOTE_TAIL_GAP = 75
+NOTE_GROUP_HEIGHT = 30  # TODO - adjust this - or figure out how to make it more robust
 
 ### Guitar Stuff
 NOTE_QUEUE_SIZE = 100
@@ -43,4 +44,4 @@ WARPBOX_PREVIEW_FPS = 30
 NOTES_SCREENSHOT_PATH = "screenshots/note_colors.png"
 COLORS_PATH = "hsv_colors.npy"
 COLOR_PICKING_GROWTH_FACTOR = 2
-HUE_RADIUS = 8
+HUE_RADIUS = 10

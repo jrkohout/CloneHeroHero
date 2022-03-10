@@ -67,15 +67,35 @@ class ColorCapture:
         self._set_hsv_bounds(hsv_note_colors)
 
     def _set_hsv_bounds(self, hsv_colors):
-        z = np.zeros((5, 1), dtype=np.int16)
-        a = 179 * np.ones((5, 1), dtype=np.int16)
-        hues = hsv_colors[:, 0].reshape(-1, 1).astype(np.int16)
-        low_hues = np.max(np.hstack([hues - settings.HUE_RADIUS, z]), axis=1).reshape(-1, 1).astype(np.uint8)
-        high_hues = np.min(np.hstack([hues + settings.HUE_RADIUS, a]), axis=1).reshape(-1, 1).astype(np.uint8)
-        h = 100 * np.ones((5, 2), dtype=np.uint8)  # TODO - explore better thresholding
-        t = 255 * np.ones((5, 2), dtype=np.uint8)
-        self._hsv_lowers = np.hstack([low_hues, h])
-        self._hsv_uppers = np.hstack([high_hues, t])
+        # z = np.zeros((5, 1), dtype=np.int16)
+        # a = 179 * np.ones((5, 1), dtype=np.int16)
+        # hues = hsv_colors[:, 0].reshape(-1, 1).astype(np.int16)
+        # low_hues = np.max(np.hstack([hues - settings.HUE_RADIUS, z]), axis=1).reshape(-1, 1).astype(np.uint8)
+        # high_hues = np.min(np.hstack([hues + settings.HUE_RADIUS, a]), axis=1).reshape(-1, 1).astype(np.uint8)
+        # h = 100 * np.ones((5, 2), dtype=np.uint8)
+        # t = 255 * np.ones((5, 2), dtype=np.uint8)
+        # self._hsv_lowers = np.hstack([low_hues, h])
+        # self._hsv_uppers = np.hstack([high_hues, t])
+
+        # TODO - Temporarily overriding the color bounds; redo the color picking using amalgamation and a bunch of clicks
+        # TODO - could keep color picking (and maybe frame bounds selection) as a seperate app
+
+        # TODO - need special case for red
+
+        self._hsv_lowers = np.uint8([
+            [55, 100, 100],
+            [0, 100, 100],
+            [25, 100, 100],
+            [95, 100, 100],  # Need to watch out for the blue glowing outlines around star notes
+            [15, 100, 100]
+        ])
+        self._hsv_uppers = np.uint8([
+            [65, 255, 255],
+            [5, 255, 255],
+            [35, 255, 255],
+            [110, 255, 255],
+            [35, 255, 255]
+        ])
 
     def _show_color_preview(self):
         note_img = cv2.imread(settings.NOTES_SCREENSHOT_PATH)
