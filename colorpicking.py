@@ -2,7 +2,6 @@
 
 import cv2
 
-
 callback_img = None
 
 

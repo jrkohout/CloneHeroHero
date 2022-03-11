@@ -5,7 +5,6 @@ import numpy as np
 
 import settings
 
-
 callback_img = None
 # rows: green, red, yellow, blue, orange
 hsv_note_colors = np.empty((5, 3), dtype=np.uint8)
@@ -77,10 +76,9 @@ class ColorCapture:
         # self._hsv_lowers = np.hstack([low_hues, h])
         # self._hsv_uppers = np.hstack([high_hues, t])
 
-        # TODO - Temporarily overriding the color bounds; redo the color picking using amalgamation and a bunch of clicks
+        # TODO - Temporarily overriding the color bounds; redo the color picking using amalgamation.png and a bunch of
+        #  clicks
         # TODO - could keep color picking (and maybe frame bounds selection) as a seperate app
-
-        # TODO - need special case for red
 
         self._hsv_lowers = np.uint8([
             [55, 100, 100],

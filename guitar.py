@@ -38,7 +38,9 @@ class NoteQueue:
         self._times = deque()  # use .appendleft() to push, .pop() to pop, and [-1] to peek
 
     def enqueue(self, note_mask):
-        self._times.appendleft(time.perf_counter_ns() + settings.STRUM_DELAY_NS)  # action time = current time + delay
+        self._times.appendleft(
+            time.perf_counter_ns() + settings.DETECTION_DELAY_NS
+        )  # action time = current time + delay
         self._notes[self._right_idx] = note_mask
         self._right_idx = (self._right_idx + 1) % self._size
 
@@ -57,19 +59,15 @@ class NoteQueue:
 
 class Guitar:
     def __init__(self):
-        self._hold_notes = NoteQueue(settings.NOTE_QUEUE_SIZE, 5)
+        self._hold_notes_and_strum = NoteQueue(settings.NOTE_QUEUE_SIZE, 5)
         self._release_notes = NoteQueue(settings.NOTE_QUEUE_SIZE, 5)
 
     def add_release(self, note_mask):
         self._release_notes.enqueue(note_mask)
 
-    def add_hold(self, note_mask):  # currently actually acts like add_hold_and_strum
-        self._hold_notes.enqueue(note_mask)
+    def add_hold_and_strum(self, note_mask):
+        self._hold_notes_and_strum.enqueue(note_mask)
 
-    # TODO - could MAYBE have a thread block for a signal on get(), and only send a signal to play the notes
-    #  when the delay has passed in the many check_actions calls currently in main. This would prevent the main
-    #  thread from having to pres, strum, and release the notes, which might be taking take some time. Though with
-    #  the other threading experiments, this seems unlikely to help (but I haven't tried on a powerful PC).
     def check_actions(self):
         # only perform actions if the delay has passed
         current_time = time.perf_counter_ns()
@@ -78,7 +76,7 @@ class Guitar:
         if self._release_notes.is_populated() and current_time >= self._release_notes.get_next_time():
             release(self._release_notes.dequeue())
 
-        # check holds
-        if self._hold_notes.is_populated() and current_time >= self._hold_notes.get_next_time():
-            hold(self._hold_notes.dequeue())
-            strum()  # TODO - untie strum from hold
+        # check hold-and-strums
+        if self._hold_notes_and_strum.is_populated() and current_time >= self._hold_notes_and_strum.get_next_time():
+            hold(self._hold_notes_and_strum.dequeue())
+            strum()

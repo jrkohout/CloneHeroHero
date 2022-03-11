@@ -8,7 +8,6 @@ import configparser
 
 import settings
 
-
 fretboard_coords = list()
 
 
@@ -49,7 +48,6 @@ class ScreenFeed:
         for mon in self._mss.monitors:
             print(mon)
         print()
-        # TODO - also set window titles to the instructions printed in console
         if load_properties:
             self._load_properties()
         else:
@@ -76,7 +74,7 @@ class ScreenFeed:
         with open(settings.PROPERTIES_PATH, 'w') as configfile:
             config.write(configfile)
 
-    def _set_capture_bounds(self):
+    def _set_capture_bounds(self):  # todo - break apart this method; make what it is doing clearer
         screenshot = np.array(self._mss.grab(self._mon))
         small_width = int(screenshot.shape[1] / settings.MONITOR_PREVIEW_SHRINK_FACTOR)
         small_height = int(screenshot.shape[0] / settings.MONITOR_PREVIEW_SHRINK_FACTOR)
@@ -168,7 +166,7 @@ class ScreenFeed:
 
     def put_next_frame(self, dest_arr):
         cv2.warpPerspective(
-            cv2.cvtColor(  # convert to hsv TODO - try using RGB in project post-setup to prevent need for conversion
+            cv2.cvtColor(  # convert to hsv
                 np.array(self._mss.grab(self._boundbox), dtype=np.uint8),  # need to use float32 for OpenCV
                 cv2.COLOR_BGR2HSV
             ),

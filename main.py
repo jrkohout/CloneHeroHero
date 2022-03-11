@@ -21,11 +21,9 @@ class Hero:
         self._old_bottom_tail_bottom_y = np.zeros(5, dtype=int)
         self._guitar = Guitar()
 
-    # TODO - try doing connectedcomponents on the whole frame rather than column by column?
-    # TODO - I wonder if I can use some logic to better detect multi-note strums, the bot sometimes struggles with those
     def _get_note_positions(self, mask_columns, new_note_bottom_y, new_bottom_tail_top_y, new_bottom_tail_bottom_y):
         for i, mask_col in enumerate(mask_columns):
-            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)  # todo - maybe don't need centroid calculations, look for simpler method
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)
 
             relevant_stats = stats[1:][stats[1:, cv2.CC_STAT_HEIGHT] > settings.NOTE_HEIGHT_THRESH]
             note_idx = relevant_stats[:, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH
@@ -35,22 +33,22 @@ class Hero:
 
             new_note_bottom_y[i] = np.max(note_stats[:, cv2.CC_STAT_TOP]) if note_stats.shape[0] > 0 else 0
             new_bottom_tail_top_y[i] = np.max(tail_stats[:, cv2.CC_STAT_TOP]) if tail_stats.shape[0] > 0 else 0
-            new_bottom_tail_bottom_y[i] = np.max(tail_stats[:, cv2.CC_STAT_TOP] + tail_stats[:, cv2.CC_STAT_HEIGHT]) if tail_stats.shape[0] > 0 else 0
+            new_bottom_tail_bottom_y[i] = np.max(tail_stats[:, cv2.CC_STAT_TOP] + tail_stats[:, cv2.CC_STAT_HEIGHT]) \
+                if tail_stats.shape[0] > 0 else 0
 
             if settings.SHOW_FEED and settings.DEV_MODE:
                 if new_note_bottom_y[i] != 0:
-                    cv2.line(mask_col, (0, new_note_bottom_y[i]), (mask_col.shape[1] - 1, new_note_bottom_y[i]), (125, 125, 125), thickness=3)
+                    cv2.line(mask_col, (0, new_note_bottom_y[i]), (mask_col.shape[1] - 1, new_note_bottom_y[i]),
+                             (125, 125, 125), thickness=3)
                 if new_bottom_tail_top_y[i] != 0:
-                    cv2.line(mask_col, (0, new_bottom_tail_top_y[i]), (mask_col.shape[1] - 1, new_bottom_tail_top_y[i]), (125, 125, 125), thickness=3)
+                    cv2.line(mask_col, (0, new_bottom_tail_top_y[i]), (mask_col.shape[1] - 1, new_bottom_tail_top_y[i]),
+                             (125, 125, 125), thickness=3)
                 if new_bottom_tail_bottom_y[i] != 0:
-                    cv2.line(mask_col, (0, new_bottom_tail_bottom_y[i]), (mask_col.shape[1] - 1, new_bottom_tail_bottom_y[i]), (125, 125, 125), thickness=3)
+                    cv2.line(mask_col, (0, new_bottom_tail_bottom_y[i]),
+                             (mask_col.shape[1] - 1, new_bottom_tail_bottom_y[i]), (125, 125, 125), thickness=3)
 
             self._guitar.check_actions()  # FIXME check action
 
-    # TODO - some notes tails are not picked up by segmentation, some notes are split into small parts that
-    #  are ignored by algorithm, some notes are smaller than the threshold while others in same line are bigger than threshold
-    # TODO - try implementing support for open strums (pick purple color and segment the whole frame, or a
-    #  narrow band of the frame since it's pretty skinny)
     def play_loop(self):
         frame = np.empty(self._s_feed.frame_shape, dtype=np.uint8)
         frame_columns = np.array_split(frame, 5, axis=1)  # produces evenly spaced column views into frame
@@ -68,7 +66,7 @@ class Hero:
 
         while True:
             # TODO - better incorporate the FIXME check action checks
-            self._s_feed.put_next_frame(frame)  # TODO - optimize - have frame be a minimum size (scale down)
+            self._s_feed.put_next_frame(frame)
 
             self._guitar.check_actions()  # FIXME check action
 
@@ -83,10 +81,11 @@ class Hero:
             hold_notes = self._old_note_bottom_y > new_note_bottom_y
             if np.any(hold_notes):
                 other_group_hold_notes = new_note_bottom_y > group_note_thresh
-                self._guitar.add_hold(hold_notes | other_group_hold_notes)
+                self._guitar.add_hold_and_strum(hold_notes | other_group_hold_notes)
                 new_note_bottom_y[other_group_hold_notes] = 0
 
-            release_notes = (new_bottom_tail_bottom_y < tail_gap_cutoff) | (self._old_bottom_tail_top_y > new_bottom_tail_top_y)
+            release_notes = (new_bottom_tail_bottom_y < tail_gap_cutoff) | (
+                    self._old_bottom_tail_top_y > new_bottom_tail_top_y)
             if np.any(release_notes):
                 self._guitar.add_release(release_notes)
 
@@ -102,18 +101,18 @@ class Hero:
 
             self._guitar.check_actions()  # FIXME check action
 
-            k = cv2.waitKey(settings.MS_DELAY)  # TODO - remove waiting completely to speed up
+            k = cv2.waitKey(settings.MS_DELAY)
             if k != -1:
                 if k == ord('q'):
                     print("quit.")
                     cv2.destroyAllWindows()
                     break
                 elif k == ord('w'):
-                    settings.STRUM_DELAY_NS += 1e6
-                    print("Increased strum delay to", settings.STRUM_DELAY_NS / 1e6, "ms.")
+                    settings.DETECTION_DELAY_NS += 1e6
+                    print("Increased strum delay to", settings.DETECTION_DELAY_NS / 1e6, "ms.")
                 elif k == ord('s'):
-                    settings.STRUM_DELAY_NS -= 1e6
-                    print("Decreased strum delay to", settings.STRUM_DELAY_NS / 1e6, "ms.")
+                    settings.DETECTION_DELAY_NS -= 1e6
+                    print("Decreased strum delay to", settings.DETECTION_DELAY_NS / 1e6, "ms.")
 
 
 # returns true if yes, false if no
@@ -126,7 +125,6 @@ def prompt_yn(prompt):
 
 def main():
     try:
-        # TODO - make better prompts, better integrate setup
         do_previews = not prompt_yn("Skip previews of screen feed and color capture? (y/n) ")
         load_sfp = prompt_yn("Load screen feed properties from file? (y/n) ")
         load_ccp = prompt_yn("Load color capture properties from file? (y/n) ")
