@@ -27,7 +27,7 @@ class Hero:
         for i, mask_col in enumerate(mask_columns):
             num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_col)  # todo - maybe don't need centroid calculations, look for simpler method
 
-            relevant_stats = stats[1:][stats[1:, cv2.CC_STAT_AREA] > settings.AREA_THRESH]
+            relevant_stats = stats[1:][stats[1:, cv2.CC_STAT_HEIGHT] > settings.NOTE_HEIGHT_THRESH]
             note_idx = relevant_stats[:, cv2.CC_STAT_WIDTH] > settings.NOTE_TAIL_WIDTH_THRESH
 
             note_stats = relevant_stats[note_idx]
