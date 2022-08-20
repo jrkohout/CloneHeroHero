@@ -1,5 +1,5 @@
 # CloneHeroHero
-A CloneHero Bot
+A Clone Hero Bot
 
 This project harnesses the power of OpenCV's Python library to dominate the most challenging charts of Gutar Heroes I, II, and III. Watch [this video](https://youtu.be/JSdmY2yV33M) to see the bot crush DrangonForce's Through the Fire and Flames on expert mode.
 
